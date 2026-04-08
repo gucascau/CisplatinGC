@@ -1,0 +1,415 @@
+---
+title: "AnnotationIntegration"
+author: "Xin Wang"
+date: "2026-02-19"
+output: html_document
+   This script is used for the annotation integration, which we calcualte the each cell by three methods. FinalScore(cell, type) = w1.PscANVI +w2 Pseurat + w3 Pmanual
+        1) scvi tools for the prediction
+        2) Seurat prediction
+        3) manually annotated the cell types using the biomarker 
+---
+
+```{r setup, include=FALSE}
+sessionInfo()
+library(sf)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+#remotes::install_github("mojaveazure/seurat-disk")
+#install.packages('devtools') #assuming it is not already installed
+library(SeuratDisk)
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+library(devtools)
+#install_github('andreacirilloac/updateR')
+# install.packages("sctransform")
+# install.packages("ggthemes")
+# loading the libarary
+library(updateR)
+
+library("sctransform")
+library("ggthemes")
+library(Seurat)
+
+# BiocManager::install("limma")
+# BiocManager::install("ComplexHeatmap")
+# BiocManager::install("biomaRt")
+# BiocManager::install("methrix")BiocManager::install("org.Hs.eg.db")
+# devtools::install_github("saeyslab/nichenetr")
+library(limma)
+#library(nichenetr)
+library(tidyverse)
+library(dplyr)
+
+library(biomaRt)
+library("data.table")
+
+
+#library(umap)
+library(patchwork)
+library(cowplot)
+library(installr)
+
+#install.packages("Matrix", repos = "http://cran.r-project.org")
+### we used discre color palettes from ggsci
+
+library("ggsci")
+library("ggplot2")
+library("gridExtra")
+
+
+#options(buildtools.check = function(action) TRUE )
+#devtools::install_url('https://cran.r-project.org/src/contrib/Archive/Matrix.utils/Matrix.utils_0.9.7.tar.gz')
+#devtools::install_github('cole-trapnell-lab/monocle3')
+#library(monocle3)
+
+library(harmony)
+library(Seurat)
+#library(SeuratData)
+library(tidyverse)
+
+#library(BPCells)
+library(ggplot2)
+library("devtools")
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+#library(tibble)
+#library(future)
+library(here)
+library(patchwork)
+library(future)
+#library(monocle3)
+#devtools::install_dev("remotes")
+#remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
+#remotes::install_github(repo ='chris-mcginnis-ucsf/DoubletFinder' )
+#install.packages("DoubletFinder")
+library(DoubletFinder)
+#library(future.callr)
+library("ggsci")
+library("ggplot2")
+library("gridExtra")
+options(future.globals.maxSize = 1e15)
+```
+
+# set up the environment
+
+```{r}
+# Object Dir
+
+CisplatinObjDir <- c("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Annotation/")
+OutDir <- c("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Annotation/")
+
+AnnDir <- c("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/scripts/Integration/")
+
+setwd(OutDir)
+```
+
+# Read the proceeded file
+
+```{r}
+# annotation file
+IndividualAnnotation<- read.csv(paste0(AnnDir, "query_scanvi_manual_seurat_annotations.csv"))
+# the single cell RDS
+CisplatinObj <- readRDS(paste0(CisplatinObjDir, "Cisplatin_Vehicle_Raw_Predict_Annotation.RDS"))
+
+```
+
+# Update the annotation file
+```{r}
+unique(IndividualAnnotation$predicted.id)
+unique(IndividualAnnotation$Raw_cell_type)
+OriginCellType<- unique(IndividualAnnotation$Raw_cell_type)
+
+OriginCellTypeAbb %>% length()
+#AnnotationDetails<- data.frame(OriginCellType,OriginCellTypeAbb)
+# due to the unclear DTL and ATL, we put them as LOH
+IndividualAnnotation$Raw_cell_type[IndividualAnnotation$Raw_cell_type == "DTL"] <- "LOH"
+IndividualAnnotation <- IndividualAnnotation %>%
+  mutate(
+    SeuratPredictAbb = case_when(
+      grepl("cortical thick ascending limb", predicted.id) ~ "TAL",
+      grepl("medullary thick ascending limb", predicted.id) ~ "TAL",
+      grepl("thin descending limb", predicted.id) ~ "LOH",
+      grepl("thin ascending limb", predicted.id) ~ "LOH",
+      grepl("loop of Henle epithelial cell$", predicted.id) ~ "LOH",
+      grepl("proximal tubule", predicted.id) ~ "PT",
+      grepl("distal convoluted tubule", predicted.id) ~ "DCT",
+      grepl("connecting tubule", predicted.id) ~ "CNT",
+      grepl("principal cell", predicted.id) ~ "PC",
+      grepl("alpha-intercalated", predicted.id) ~ "IC",
+      grepl("beta-intercalated", predicted.id) ~ "IC",
+      grepl("collecting duct epithelial cell$", predicted.id) ~ "CD",
+      grepl("glomerular endothelial", predicted.id) ~ "END",
+      grepl("afferent arteriole endothelial", predicted.id) ~ "END",
+      grepl("efferent arteriole endothelial", predicted.id) ~ "END",
+      grepl("endothelial cell$", predicted.id) ~ "END",
+      grepl("podocyte|glomerular epithelial", predicted.id) ~ "POD",
+      grepl("mesangial", predicted.id) ~ "Mes",
+      grepl("fibroblast", predicted.id) ~ "FIB",
+      grepl("pericyte", predicted.id) ~ "END",
+      grepl("macrophage", predicted.id) ~ "IMM",
+      grepl("neutrophil", predicted.id) ~ "IMM",
+      grepl("T cell", predicted.id) ~ "IMM",
+      TRUE ~ "Uncertain"
+    ),
+    ScviPredictAbb = case_when(
+      grepl("cortical thick ascending limb", scanvi_label) ~ "TAL",
+      grepl("medullary thick ascending limb", scanvi_label) ~ "TAL",
+      grepl("thin descending limb", scanvi_label) ~ "LOH",
+      grepl("thin ascending limb", scanvi_label) ~ "LOH",
+      grepl("loop of Henle epithelial cell$", scanvi_label) ~ "LOH",
+      grepl("proximal tubule", scanvi_label) ~ "PT",
+      grepl("distal convoluted tubule", scanvi_label) ~ "DCT",
+      grepl("connecting tubule", scanvi_label) ~ "CNT",
+      grepl("principal cell", scanvi_label) ~ "PC",
+      grepl("alpha-intercalated", scanvi_label) ~ "IC",
+      grepl("beta-intercalated", scanvi_label) ~ "IC",
+      grepl("collecting duct epithelial cell$", scanvi_label) ~ "CD",
+      grepl("glomerular endothelial", scanvi_label) ~ "END",
+      grepl("afferent arteriole endothelial", scanvi_label) ~ "END",
+      grepl("efferent arteriole endothelial", scanvi_label) ~ "END",
+      grepl("endothelial cell$", scanvi_label) ~ "END",
+      grepl("podocyte|glomerular epithelial", scanvi_label) ~ "POD",
+      grepl("mesangial", scanvi_label) ~ "Mes",
+      grepl("fibroblast", scanvi_label) ~ "FIB",
+      grepl("pericyte", scanvi_label) ~ "END",
+      grepl("macrophage", scanvi_label) ~ "IMM",
+      grepl("neutrophil", scanvi_label) ~ "IMM",
+      grepl("T cell", scanvi_label) ~ "IMM",
+      TRUE ~ "Uncertain"
+    )
+    
+  )
+IndividualAnnotation %>% head()
+# another way to generate the 
+# IndividualAnnotation <- IndividualAnnotation %>%
+#   left_join(AnnotationDetails, by = c("predicted.id" = "OriginCellType"))
+
+FinalTable<- IndividualAnnotation %>% dplyr::select(SeuratPredictAbb, prediction.score.max, ScviPredictAbb, scanvi_confidence, Raw_cell_type, Raw_cell_type_Confidence)
+
+```
+
+# we will generate 
+
+```{r}
+
+# Assign weights for the three methods
+# Method1: Seurat, Method2: scanVI, Method3: Raw_cell_type
+w_seurat <- 0.2
+w_scanvi <- 0.5
+w_raw <- 0.3  # optional if you want to include ground truth
+
+# Optionally, normalize confidence scores to 0-1 if needed
+# For your table, assume prediction.score.max and scanvi_confidence are already 0-1
+
+# Function to compute weighted consensus per row
+# Function to compute weighted consensus per row
+get_weighted_consensus <- function(seurat_pred, seurat_conf,
+                                   scanvi_pred, scanvi_conf,
+                                   raw_pred, raw_conf) {
+  
+  # Build a named vector with weighted scores
+  scores <- c(
+    setNames(seurat_conf * w_seurat, seurat_pred),
+    setNames(scanvi_conf * w_scanvi, scanvi_pred),
+    setNames(raw_conf * w_raw, raw_pred)
+  )
+  
+  # Aggregate if same cell type appears multiple times
+  agg_scores <- tapply(scores, names(scores), sum)
+  
+  # Get the cell type with max score
+  consensus <- names(agg_scores)[which.max(agg_scores)]
+  
+  # Get the consensus score
+  consensus_score <- max(agg_scores)
+  
+  # Optional: mark low confidence consensus as "Uncertain"
+  if (consensus_score < 0.2) {
+    consensus <- "Uncertain"
+  }
+  
+  return(c(consensus, consensus_score))
+}
+
+
+# Apply function row-wise
+Consensus_Results <- mapply(
+  get_weighted_consensus,
+  seurat_pred = IndividualAnnotation$SeuratPredictAbb,
+  seurat_conf = IndividualAnnotation$prediction.score.max,
+  scanvi_pred = IndividualAnnotation$ScviPredictAbb,
+  scanvi_conf = IndividualAnnotation$scanvi_confidence,
+  raw_pred = IndividualAnnotation$Raw_cell_type,
+  raw_conf = IndividualAnnotation$Raw_cell_type_Confidence
+)
+
+# mapply returns a matrix, convert to two columns
+IndividualAnnotation$Consensus_cell_type <- Consensus_Results[1, ]
+IndividualAnnotation$Consensus_score <- as.numeric(Consensus_Results[2, ])
+
+IndividualAnnotation %>% head()
+
+```
+
+# add the meta data for the single cell object
+```{r}
+# generate the final meta annotation data
+IndividualAnnotation %>% head()
+
+FinalMata<-IndividualAnnotation %>% mutate(barcode = str_split_fixed(X, "-", 2)[,1],
+    condition = str_split_fixed(X, "-", 2)[,2]) %>% dplyr::select(SeuratPredictAbb, prediction.score.max, ScviPredictAbb, scanvi_confidence, Raw_cell_type, Raw_cell_type_Confidence, Consensus_cell_type,Consensus_score,  barcode)
+
+rownames(FinalMata) <- FinalMata$barcode
+
+# add the metadata
+CisplatinObj<- AddMetaData(object = CisplatinObj,metadata = FinalMata)
+
+# set up the levels of the cell type
+CisplatinObj$Raw_cell_type <- factor(CisplatinObj$Raw_cell_type, levels = c("PT","DCT","TAL","CNT","LOH","PC","IC","END","IMM"))
+CisplatinObj$ScviPredictAbb <- factor(CisplatinObj$ScviPredictAbb, levels = c("PT","DCT","TAL","CNT","LOH","PC","IC","CD","END","FIB","POD","Mes","IMM","Uncertain"))
+
+CisplatinObj$Consensus_cell_type <- factor(CisplatinObj$Consensus_cell_type, levels = c("PT","DCT","TAL","CNT","LOH","PC","IC","CD","POD","END","IMM","Uncertain"))
+CisplatinObj$SeuratPredictAbb <- factor(CisplatinObj$SeuratPredictAbb, levels = c("PT","DCT","TAL","CNT","LOH","PC","IC","CD","END","FIB","POD","Mes","IMM"))
+
+# The Uncertain mostly contains PT cells, we put the name as "PT"
+# Replace "unknown" with "PT"
+#CisplatinObj$Consensus_cell_type[CisplatinObj$Consensus_cell_type == "Uncertain"] <- "PT"
+
+levels(factor(CisplatinObj$Raw_cell_type))
+levels(factor(CisplatinObj$ScviPredictAbb))
+levels(factor(CisplatinObj$Consensus_cell_type))
+levels(factor(CisplatinObj$SeuratPredictAbb))
+```
+
+# we performed another step that incoporate the cluster 0 and 5 as the PT instead of others
+```{r}
+CisplatinObj@meta.data %>% head()
+CisplatinObj@meta.data %>% filter(Sub2 %in% c(0,5,7) & orig.ident == "Cisplatin")
+CisplatinObj@meta.data<- CisplatinObj@meta.data %>% mutate(FinalAnnotation = case_when(Sub2 %in% c(0,5,7) & orig.ident == "Cisplatin" ~ "PT",TRUE ~ Consensus_cell_type))
+CisplatinObj$FinalAnnotation <- factor(CisplatinObj$FinalAnnotation, levels = c("PT","DCT","TAL","CNT","LOH","PC","IC","CD","POD","END","IMM","Uncertain"))
+levels(factor(CisplatinObj$FinalAnnotation))
+
+saveRDS(CisplatinObj, file = "CisplatinObj_v021926.rds")
+```
+
+
+# we check the biomarkers
+```{r}
+GroupAnnTypes<- c("Raw_cell_type", "ScviPredictAbb", "SeuratPredictAbb","Consensus_cell_type","FinalAnnotation" )
+Finalcelltypemarkers<- c("Lrp2","Slc34a1","Slc13a3", # Proximal tubule cells (PT)
+                      "Slc12a3","Pvalb","Wnk1",# Distal connecting tublue (DCT)
+
+                     "Umod","Slc12a1","Cldn10", # Thick ascending limb cells (TAL)
+                      "Klk1","Slc8a1","Calb1", # Connecting tubule (CNT)
+                     "Slc14a2","Fst","Bst1", # descending thin  limb cells (DTL)
+                     "Sh3gl3","Prox1", # ascending thin limb cells (ATL)
+                     #"Enox1","Thsd4", #Macula densa
+                      "Aqp2","Hsd11b2","Scnn1g", # principal cells (PC)
+                    "Atp6v1g3","Aqp6","Slc26a7", # Intercalated cells
+                   # "Krt5","Upk1b","Krt14", # Urothelium
+                   "Wt1","Nphs1","Nphs2", #Podocyte
+                    "Cdh5","Igfbp3","Pecam1", # Endothelium
+                    "Col3a1","Fbn1","Col1a1", # Fibroblast
+                   "Ptprc","Cd3e","Cd19","Cd14"
+                    # "Ireb2","Alas2", # Plasmacytoid dentritic cells
+                    # "S100a8","S100a9","Il1b", # Neutrophil
+                    # "C1qa","C1qb","Aif1", # Macrophage
+                    # "Cxcr6","Cd247","Cd3e", # T cells
+                    # "Igkc","Cd79a","Cd79b", # B cells
+                    # "Ccl5","Nkg7","Cd7" # NK/Cd8 cells
+)
+
+
+for (i in GroupAnnTypes){
+  GroupDimPlot<- DimPlot(CisplatinObj, group.by = i, split.by = "DataSet", label = T)
+  ggsave(paste0(i,"_Annotation_DimPlot.pdf"), plot=GroupDimPlot , height = 4, width = 8)
+  Idents(CisplatinObj) <- i
+  GroupDotPlot<- DotPlot(CisplatinObj, features =Finalcelltypemarkers)+RotatedAxis()
+  ggsave(paste0(i,"Cisplatin_Vehicle_DotPlot.pdf"), plot = GroupDotPlot, height = 4, width = 10)
+
+  df_counts <- CisplatinObj@meta.data %>%
+  group_by(!!sym(i), DataSet) %>%
+  summarise(Count = n())
+
+  FrequencyBarPlot<- ggplot(df_counts, aes(x = DataSet, y = Count, fill = !!sym(i))) +
+  geom_bar(stat = "identity", position = "stack") +  # side-by-side bars
+  theme_minimal() +
+  labs(title = "Cell Type Counts Across Datasets",
+       x = "Dataset",
+       y = "Cell Count",
+       fill = "Cell Type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+scale_fill_brewer(palette = "Set3")
+  
+  ggsave(paste0(i,"Cisplatin_Vehicle_FreqBar.pdf"), plot = FrequencyBarPlot, height = 5, width =4)
+}
+
+
+FeaturePlot(CisplatinObj, features  = "Egf", split.by = "DataSet", label = T)
+FeaturePlot(CisplatinObj, features  = "percent.mt", split.by = "DataSet", label = T)
+ConsensusFeaturePlot<- FeaturePlot(CisplatinObj, features  = "Consensus_score", split.by = "DataSet", label = T)
+ggsave(paste0("Consensus","_scorefeaturePlot.pdf"), plot = ConsensusFeaturePlot, height = 4, width = 10)
+
+df_counts <- CisplatinObj@meta.data %>%
+  group_by(FinalAnnotation, DataSet) %>%
+  summarise(Count = n())
+
+ggplot(df_counts, aes(x = DataSet, y = Count, fill = FinalAnnotation)) +
+  geom_bar(stat = "identity", position = "stack") +  # side-by-side bars
+  theme_minimal() +
+  labs(title = "Cell Type Counts Across Datasets",
+       x = "Dataset",
+       y = "Cell Count",
+       fill = "Cell Type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_fill_brewer(palette = "Set3")
+```
+
+# generate a report
+```{r}
+# Example columns in scrna@meta.data
+# scANVI, Seurat, Manual
+library(dplyr)
+
+FinalMata <- FinalMata %>%
+  mutate(Consensus_Confidence = case_when(
+    Consensus_score >= 0.9 ~ "High",
+    Consensus_score >= 0.4 ~ "Medium",
+    TRUE ~ "Low"
+  ))
+
+# Preview
+head(FinalMata)
+FinalMata$Consensus_Confidence <- factor(FinalMata$Consensus_Confidence, levels = c("High","Medium","Low"))
+
+table(FinalMata$Consensus_Confidence)
+prop.table(table(FinalMata$Consensus_Confidence))
+
+Consensus_Confidence_Barplot<-ggplot(FinalMata, aes(x=Consensus_Confidence, fill=Consensus_Confidence)) +
+  geom_bar() +
+  scale_fill_manual(values = c("High"="#4CAF50","Medium"="#FFB74D","Low"="#E57373")) +
+  theme_minimal() +
+  labs(title="Cell Annotation Confidence",
+       x="Confidence Level",
+       y="Number of Cells")
+
+#
+ggsave("Consensus_Confidence_Barplot.pdf", plot = Consensus_Confidence_Barplot, height = 4, width = 5)
+
+
+
+```
+
+
+# generate the featureplots for the requested genes
+```{r}
+# the candidate markers 
+
+
+
+VlnPlot(CisplatinObj, features  = "Egf",split.by = "DataSet")
+VlnPlot(CisplatinObj, features  = "Havcr1",split.by = "DataSet") 
+?VlnPlot
+```
+
+

@@ -1,0 +1,690 @@
+---
+title: "CisplatinGC_Integration"
+author: "Xin Wang"
+date: "2025-11-24"
+output: html_document
+    This script is to integrate the different conditions
+---
+
+```{r setup, include=FALSE}
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+
+#install.packages('devtools') #assuming it is not already installed
+
+library(devtools)
+
+#install_github('andreacirilloac/updateR')
+# install.packages("sctransform")
+# install.packages("ggthemes")
+# loading the libarary
+library(updateR)
+
+
+library("sctransform")
+library("ggthemes")
+library(Seurat)
+library(Matrix)
+library(nichenetr)
+library(tidyverse)
+library(dplyr)
+
+library(biomaRt)
+library("data.table")
+
+
+library(umap)
+library(patchwork)
+library(cowplot)
+
+library(ggplot2)
+
+
+### we used discre color palettes from ggsci
+
+library("ggsci")
+library("ggplot2")
+library("gridExtra")
+
+
+library(harmony)
+library(Seurat)
+#library(SeuratData)
+library(tidyverse)
+
+#library(BPCells)
+library(ggplot2)
+library("devtools")
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+#library(tibble)
+#library(future)
+library(harmony)
+library(here)
+library(patchwork)
+library(future)
+library(monocle3)
+#devtools::install_dev("remotes")
+#remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
+#remotes::install_github(repo ='chris-mcginnis-ucsf/DoubletFinder' )
+#install.packages("DoubletFinder")
+library(DoubletFinder)
+library(future.callr)
+library("ggsci")
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+##########################################################################
+# step 1: preparation for the working environment and the sample details 
+##########################################################################
+
+## reading the loacal file and creat the seurat object:
+
+## set pathway:
+setwd("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/QualityControl/")
+
+### create a vector of convenient sample names, such as "D0","D3","D7" and "D28"
+
+samples=c("Vehicle","Cisplatin")
+
+Outdir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/"
+QCdir ="/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/QualityControl/"
+dir.create(QCdir)
+DoubletDir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/DoubletRemoveal/"
+
+dir.create(DoubletDir)
+
+MergedDir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/MergedObj/"
+dir.create(MergedDir)
+
+IntegrationDir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Integration/"
+dir.create(IntegrationDir)
+Inputdir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Preprocessed/"
+##########################################################################
+### step 2: read in the feature-barcode matrics generated from PIPseeker
+##########################################################################
+
+## generate a new list of elements of different types
+DataPipseq = list() 
+
+DataPipseq[[1]]<- ReadMtx(mtx = paste0(Inputdir,"Vehicle/raw_matrix/matrix.mtx.gz"),features = paste0(Inputdir,"Vehicle/raw_matrix/features.tsv.gz"),cells = paste0(Inputdir,"Vehicle/raw_matrix/barcodes.tsv.gz"))
+
+
+# DataPipseq[[2]]<- ReadMtx(mtx = paste0(Inputdir,"Vehicle_GC/raw_matrix/matrix.mtx.gz"),features = paste0(Inputdir,"Vehicle_GC/raw_matrix/features.tsv.gz"),cells = paste0(Inputdir,"Vehicle_GC/raw_matrix/barcodes.tsv.gz"))
+
+DataPipseq[[2]]<- ReadMtx(mtx = paste0(Inputdir,"Cisplatin/raw_matrix/matrix.mtx.gz"),features = paste0(Inputdir,"Cisplatin/raw_matrix/features.tsv.gz"),cells = paste0(Inputdir,"Cisplatin/raw_matrix/barcodes.tsv.gz"))
+
+# DataPipseq[[4]]<- ReadMtx(mtx = paste0(Inputdir,"Cisplatin_GC/raw_matrix/matrix.mtx.gz"),features = paste0(Inputdir,"Cisplatin_GC/raw_matrix/features.tsv.gz"),cells = paste0(Inputdir,"Cisplatin_GC/raw_matrix/barcodes.tsv.gz"))
+
+dim(DataPipseq[[1]])
+dim(DataPipseq[[2]])
+##########################################################################
+### step 3:Convert each feature-barcode matrix to a Seurat object
+##########################################################################
+# First create an empty list to hold the Seurat objects
+scrna.list = list(); 
+
+scrna.list[[1]] = CreateSeuratObject(
+  counts = DataPipseq[[1]],
+  project = samples[1],
+  min.cells = 3,
+  min.features = 100
+)
+
+
+### here we measure the mitochondrial proportion for each datasets
+scrna.list[[1]][["percent.mt"]] <-
+  PercentageFeatureSet(scrna.list[[1]], pattern = "^mt-")
+
+### filtered the low quality cells that have less than 200 RNA or larger than 4000 and percentage mt high than 15%
+scrna.list[[1]] <-
+  subset(scrna.list[[1]],
+         subset = nFeature_RNA > 200 &
+           #nFeature_RNA < 7000 & nCount_RNA >= 200 & 
+           percent.mt < 30)
+
+## measure the rDNA proportion for each datasets
+scrna.list[[1]][["rDNA"]] <-
+  PercentageFeatureSet(scrna.list[[1]], pattern = "^Rp[sl][[:digit:]]")
+
+scrna.list[[1]][["DataSet"]] = samples[1]
+
+### define the default with RNA
+DefaultAssay(scrna.list[[1]]) <- "RNA"
+
+```
+
+
+# trouble shooting for the diagnostics of the Cisplatin
+```{r}
+
+# check the barcod
+# counts is raw matrix (genes x barcodes)
+i=2
+
+counts <- DataPipseq[[i]]      # replace i/sample
+cat("Barcodes in raw matrix:", ncol(counts), "\n")
+umi_per_bc <- Matrix::colSums(counts)
+summary(umi_per_bc)
+table(umi_per_bc > 200) 
+# packages
+library(Matrix)
+ #BiocManager::install("DropletUtils")
+library(DropletUtils)
+library(Seurat)
+library(SoupX)      # optional, run after emptyDrops if desired
+
+# counts is genes x barcodes sparse matrix
+# quick sanity
+print(class(counts))
+print(dim(counts))   # genes x barcodes
+
+# 1) barcodeRanks to inspect and get knee
+br <- barcodeRanks(counts)
+summary(br$total)
+# optional quick plot (interactive / save to file)
+png("barcodeRanks.png", width=800, height=600)
+plot(br$rank, br$total, log="xy", xlab="Rank", ylab="Total counts", main="barcodeRanks")
+o <- order(br$rank)
+lines(br$rank[o], br$fitted[o], col="red")
+abline(v = br$knee, col="blue", lty=2)
+abline(v = br$inflection, col="green", lty=2)
+legend("bottomleft", legend=c("fitted","knee","inflection"), col=c("red","blue","green"), lty=1:2)
+dev.off()
+
+cat("knee:", br$knee, " inflection:", br$inflection, "\n")
+
+# 2) Prefilter barcodes to reduce compute
+# Strategy: keep barcodes with total counts >= min(100, br$knee/100) OR up to e.g. top 200k barcodes by total
+totals <- Matrix::colSums(counts)
+# Option A: keep barcodes with total >= 100
+keep1 <- which(totals >= 100)
+
+# Option B: if you want to keep up to top N barcodes by UMI
+Ntop <- 200000
+ord <- order(totals, decreasing = TRUE)
+keep2 <- ord[1:min(Ntop, length(ord))]
+
+# Combine heuristics to form final prefilter
+prefilter_bcs <- sort(unique(c(keep1, keep2)))
+length(prefilter_bcs)  # how many barcodes we'll run emptyDrops on
+
+# Subset counts for emptyDrops (important to reduce memory/time)
+counts_prefilt <- counts[, prefilter_bcs]
+
+# 3) Run emptyDrops
+# Lower is the minimum total count below which we don't test (set to 100 or lower for sensitive)
+set.seed(100)
+ed <- emptyDrops(counts_prefilt, lower = 100)
+# ed is a DataFrame with p.value, FDR, etc. Many rows will be NA for extremely low totals.
+
+# How many barcodes are called as cells?
+table(ed$FDR <= 0.05, useNA = "ifany")
+sum(ed$FDR <= 0.05, na.rm = TRUE)  # number of barcodes with FDR <= 0.01
+
+# 4) Get the barcodes selected as cells
+called <- rownames(ed)[which(ed$FDR <= 0.05)]
+length(called)  # number of called cell barcodes from this prefilter set
+
+# Map back to original column names (if counts had colnames)
+# If counts had colnames, prefilter_bcs are indices; convert indices to barcode names:
+if(!is.null(colnames(counts))) {
+  called_barcodes <- colnames(counts_prefilt)[rownames(ed) %in% called]
+} else {
+  # If no colnames, we will use indices
+  called_barcodes <- colnames(counts_prefilt)[which(ed$FDR <= 0.01)]
+}
+
+# 5) Create Seurat object from called barcodes
+counts_cells <- counts[, called_barcodes]  # subset original matrix by barcode names
+scrna.list[[2]] <- CreateSeuratObject(counts = counts_cells, project =  samples[2], min.cells = 3, min.features = 100) 
+# (we set min.features=0 because we already called droplets; you'll filter below)
+
+# 6) QC: compute mitochondrial % and basic filters; adjust thresholds as needed
+scrna.list[[2]][["percent.mt"]] <- PercentageFeatureSet(scrna.list[[2]], pattern = "^mt-")  # human; change for mouse (^mt-)
+summary(seu$nFeature_RNA)
+# example filter: keep nFeature_RNA > 200 and pct.mt < 25
+scrna.list[[2]] <- subset(scrna.list[[2]], subset = nFeature_RNA >= 200  & percent.mt < 50)
+cat("Cells after QC:", ncol(scrna.list[[2]] ), "\n")
+
+## measure the rDNA proportion for each datasets
+scrna.list[[2]][["rDNA"]] <-
+  PercentageFeatureSet(scrna.list[[2]], pattern = "^Rp[sl][[:digit:]]")
+
+scrna.list[[2]][["DataSet"]] = samples[2]
+
+### define the default with RNA
+DefaultAssay(scrna.list[[2]]) <- "RNA"
+# 7) Optional: SoupX ambient correction (works on raw matrices)
+# If you want SoupX: provide raw (tod) and 'toc' (table of counts: cell counts) as raw and called
+# Example:
+# sc <- SoupChannel(tod = counts, toc = as.matrix(counts_cells))
+# sc <- autoEstCont(sc)
+# adjusted <- adjustCounts(sc)
+# Then rebuild Seurat from 'adjusted' counts for called_barcodes
+# empty barcodes
+```
+
+# merge the seurate objects into a single one
+```{r}
+
+setwd(MergedDir)
+## merge might not be a good way for the intergration, instead we used the integration by find the integration features
+scrna <-
+  merge(
+    x = scrna.list[[1]],
+    y = scrna.list[[2]],
+    project = "CisplatinEffects"
+  )
+
+## change the order of days 
+levels(factor(scrna@meta.data$DataSet))
+table(scrna@meta.data$DataSet)
+scrna@meta.data$DataSet <- ordered(factor(scrna@meta.data$DataSet),levels = c("Vehicle", "Cisplatin"))
+
+scrna@meta.data %>% tail()
+
+
+# # measure the mitochondrial percentage
+# scrna[["percent.mt"]] <-
+#   PercentageFeatureSet(scrna, pattern = "^mt-")
+# scrna[["rDNA"]] <-
+#   PercentageFeatureSet(scrna, pattern = "^Rp[sl][[:digit:]]")
+
+#VlnPlot(scrna, features = c("percent.mt", "nCount_RNA", "nFeature_RNA","rDNA"))
+ QCReport <-
+   VlnPlot(
+     scrna,
+     features = c("rDNA", "percent.mt", "nCount_RNA", "nFeature_RNA") ,
+     split.by = "DataSet",
+     pt.size=0,
+     ncol = 1
+   )
+
+ggsave(filename = "SampleQC_reports.pdf",plot = QCReport, height = 12, width = 4 )
+
+pdf("PIPseq_Feature.pdf", height = 4, width = 6)
+VlnPlot(scrna, features = c("nFeature_RNA"), group.by = "DataSet",pt.size=0 ,y.max = 5000)
+dev.off()
+?VlnPlot
+pdf("PIPseq_nCounts.pdf", height = 4, width = 6)
+VlnPlot(scrna, features = c("nCount_RNA"), group.by = "DataSet",pt.size=0, y.max = 20000) 
+dev.off()
+?VlnPlot
+
+pdf("PIPseq_mtPercent.pdf", height = 4, width = 6)
+VlnPlot(scrna, features = c("percent.mt"), group.by = "DataSet",pt.size=0,y.max=80 )
+dev.off()
+?VlnPlot
+
+# ### filtered the low quality cells that have less than 200 RNA and larger than 8000 and percentage mt high than 20%, rDNA higher than 40
+# scrna <-
+#   subset (scrna,
+#           subset = nFeature_RNA > 200  &
+#             nFeature_RNA < 8000 &
+#             nCount_RNA < 16000 & percent.mt < 40 & rDNA < 40)
+```
+
+
+# remove the potential doublets
+```{r}
+
+setwd(DoubletDir)
+# Identify the doublet cells
+
+FindDoublets <- function(library_id, seurat_aggregate) {
+    #rnaAggr <- seurat_aggregate
+  seurat_obj <- subset(seurat_aggregate, idents = library_id)
+  seurat_obj <- NormalizeData(seurat_obj)
+  seurat_obj <- ScaleData(seurat_obj)
+  seurat_obj <- FindVariableFeatures(seurat_obj, selection.method = "vst", nfeatures = 2000)
+  seurat_obj <- RunPCA(seurat_obj)
+  # ElbowPlot(seurat_obj)
+  seurat_obj <- FindNeighbors(seurat_obj, dims = 1:20)
+  seurat_obj <- RunUMAP(seurat_obj, dims = 1:20)
+  # DimPlot(seurat_obj)
+
+  ## pK Identification (no ground-truth) ---------------------------------------------------------------------------------------
+  sweep.res.list_kidney <- paramSweep(seurat_obj, PCs = 1:20, sct = F)
+  sweep.stats_kidney <- summarizeSweep(sweep.res.list_kidney, GT = FALSE)
+  bcmvn_kidney <- find.pK(sweep.stats_kidney)
+  pK <- bcmvn_kidney %>% 
+    # select the pK that corresponds to max bcmvn to optimize doublet detection
+    dplyr::filter(BCmetric == max(BCmetric)) %>%
+    dplyr::select(pK) 
+  pK <- as.numeric(as.character(pK[[1]]))
+  seurat_doublets <- doubletFinder(seurat_obj, PCs = 1:20, pN = 0.25, pK = pK,
+                               nExp = round(0.05*length(seurat_obj@active.ident)), 
+                               reuse.pANN = FALSE, sct = F)
+ 
+  # create doublet groupings and visualize results
+  DF.class <- names(seurat_doublets@meta.data) %>% str_subset("DF.classifications")
+  pANN <- names(seurat_doublets@meta.data) %>% str_subset("pANN")
+  
+  # visualize the results
+  p1 <- ggplot(bcmvn_kidney, aes(x=pK, y=BCmetric)) +
+    geom_bar(stat = "identity") + 
+    ggtitle(paste0("pKmax=",pK)) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  p2 <- DimPlot(seurat_doublets, group.by = DF.class)
+  p3 <- FeaturePlot(seurat_doublets, features = pANN)
+  
+  # generate the plot for the doublet distribution
+ ggsave(filename = paste0(library_id,"_pKmax_distribution.pdf"), p1, height = 5, width = 6)
+  ggsave(filename = paste0(library_id,"_Dimplotdoublet_distribution.pdf"), p2, height = 5, width = 5)
+ ggsave(filename = paste0(library_id,"_Featureplotdoublet_distribution.pdf"), p3, height = 5, width = 5)
+ 
+  # create a df of barcodes and doublet designations
+  df_doublet_barcodes <- as.data.frame(cbind(rownames(seurat_doublets@meta.data), seurat_doublets@meta.data[[DF.class]]))
+  return(df_doublet_barcodes)
+}
+
+# take an aggregated snRNA seurat object and a list of library_id to find doublets. return a df of doublet barcodes
+# send DimPlot and FeaturePlot of doublets for each library to plots dir
+# ensure to set up the identity as each sample
+
+orig.ident<- levels(Idents(scrna))
+#scrna.list[["0DPI"]]
+# apply the findDoublets function
+list.doublet.bc <- lapply(orig.ident, function(x) {FindDoublets(x, seurat_aggregate = scrna)})
+
+list.doublet.bc %>% head()
+doublet_id <- list.doublet.bc %>%
+  bind_rows() %>%
+  dplyr::rename("doublet_id" = "V2") %>%
+  tibble::column_to_rownames(var = "V1") # this is the barcode column
+
+doublet_id %>% head()
+table(doublet_id) # quantify total doublet vs. singlet calls (expect ~6% doublets)
+# add the meta of doublet
+scrna <- AddMetaData(scrna, doublet_id)
+
+scrna@meta.data %>% dplyr::select(DataSet, doublet_id) %>% table()
+
+saveRDS(scrna, file = "scrna_merged_withdoublets.rds")
+#scrna<- readRDS("scrna_merged_withdoublets.rds")
+# remove the doublets
+scrna<-subset(scrna, subset= (doublet_id == "Singlet"))
+
+scrna@meta.data %>% dplyr::select(orig.ident) %>% table()
+```
+
+
+# the Integration
+```{r}
+
+setwd(IntegrationDir)
+
+# normalization
+
+scrna <- NormalizeData(
+  scrna,
+  normalization.method = "LogNormalize",
+  scale.factor = 10000
+)
+
+scrna <- FindVariableFeatures(
+  scrna,
+  selection.method = "vst",
+  nfeatures = 3000
+)
+# ⚠️ If you see mostly PT markers among variable genes, that’s a red flag.
+
+# ✔ Proximal tubule dominance fix
+# If PT still overwhelms:
+VariableFeatures(scrna) <- VariableFeatures(scrna)[
+  !VariableFeatures(scrna) %in% c("Lpr2","Cubn","Slc34a1","Slc5a2")
+]
+scrna <- ScaleData(
+  scrna,
+  vars.to.regress = c("nCount_RNA", "percent.mt", "percent.ribo")
+)
+# scrna <- scrna %>%
+#     NormalizeData() %>%
+#     FindVariableFeatures(selection.method = "vst") %>% 
+#     ScaleData() 
+
+scrna <- RunPCA(scrna, verbose = TRUE,  npcs = 20)
+# ElbowPlot(rnaAggr, ndims = 50) # to determine number of dimensions for clustering
+scrna <- RunHarmony(scrna, group.by.vars = c("DataSet"), reduction.save = "harmony")
+scrna <- RunUMAP(scrna, dims = 1:20, reduction = "harmony")
+scrna <- FindNeighbors(scrna, dims = 1:20,  reduction = "harmony")
+scrna <- FindClusters(scrna,  resolution = 1,algorithm = 1)
+
+scrna
+# scrna <- FindNeighbors(scrna, dims = 1:30,  reduction = "harmony", graph.name = "Test")
+# scrna <- FindClusters(scrna,  resolution = 0.1,algorithm = 1, graph.name = "Test")
+
+#rnaAggr@meta.data$doublet_viz <- ifelse(rnaAggr@meta.data$doublet_id == "Singlet",0,1)
+#DefaultAssay(scrna) <-"SCT"
+# draw the dimplot grouped by doublet_id
+DimplotScrna <- DimPlot(scrna, reduction = "umap", label = T) 
+DimplotScrna
+DimplotScrnaSplit <- DimPlot(scrna, reduction = "umap",split.by = "DataSet", label = T) 
+DimplotScrnaSplit
+
+ggsave(filename = "DimplotScrnat.pdf", plot = DimplotScrna, width = 6, height = 5)
+ggsave(filename = "DimplotScrnaSplit.pdf", plot = DimplotScrnaSplit, width = 10, height = 5)
+
+saveRDS(scrna, file = "CisplatinVsVehicle_singlecell_doublet_harmony_v0618.RDS")
+
+scrna<- readRDS("CisplatinVsVehicle_singlecell_doublet_harmony_v0618.RDS")
+
+# increase the RNA resolution
+#scrna <- FindClusters(scrna,  resolution = 1.5,algorithm = 1)
+scrna@meta.data %>% head()
+DimPlot(scrna, split.by = "DataSet")
+
+RequestGene <- c("Havcr1")
+RequestGene <- c("Egf")
+RequestGene <- c("Slc5a2")
+RequestGene <- c("Slc34a1")
+RequestGene <- c("Cubn")
+RequestGeneFeaturePlot<-FeaturePlot(scrna, features = RequestGene, split.by = "DataSet")
+
+ggsave (paste0(RequestGene,"_ExpFeaturePlot.pdf"), plot = RequestGeneFeaturePlot, height = 4, width = 8)
+
+RequestGeneFeaturePlot<-FeaturePlot(scrna, features = RequestGene, split.by = "DataSet")
+
+ggsave (paste0(RequestGene,"_ExpFeaturePlot.pdf"), plot = RequestGeneFeaturePlot, height = 4, width = 8)
+
+
+```
+
+
+##########################################################################
+### step 4:Annotate the cluster and measure the different proportion
+##########################################################################
+
+```{r}
+DefaultAssay(scrna) <-"RNA"
+
+
+Finalcelltypemarkers<- c("Lrp2","Slc34a1","Slc13a3", # Proximal tubule cells (PT)
+                      "Slc12a3","Pvalb","Wnk1",# Distal connecting tublue (DCT)
+
+                     "Umod","Slc12a1","Cldn10", # Thick ascending limb cells (TAL)
+                      "Klk1","Slc8a1","Calb1", # Connecting tubule (CNT)
+                     "Slc14a2","Fst","Bst1", # descending thin  limb cells (DTL)
+                     #"Akr1b1","Sh3gl3","Prox1", # ascending thin limb cells (ATL)
+                     #"Enox1","Thsd4", #Macula densa
+                      "Aqp2","Hsd11b2","Scnn1g", # principal cells (PC)
+                    "Atp6v1g3","Aqp6","Slc26a7", # Intercalated cells
+                    "Krt5","Upk1b","Krt14", # Urothelium
+                    "Cdh5","Igfbp3","Pecam1", # Endothelium
+                    "Col3a1","Fbn1","Lum","Col1a1", # Fibroblast
+                    "Ireb2","Alas2", # Plasmacytoid dentritic cells
+                    "S100a8","S100a9","Il1b", # Neutrophil
+                    "C1qa","C1qb","Aif1", # Macrophage
+                    "Cxcr6","Cd247","Cd3e", # T cells
+                    "Igkc","Cd79a","Cd79b", # B cells
+                    "Ccl5","Nkg7","Cd7" # NK/Cd8 cells
+)
+# Cfh: Parietal epithelial cells
+celltype.markers<- c("Lrp2","Slc34a1","Acsm1","Atp11a","Slc13a3","Notch2","Cubn","Vcam1","Havcr1","Fn1",
+                     "Slc5a12", # PTS1
+                     "Cyp4a14", # PTS2
+                     "Slc7a12", # PTS3
+                     "Col1a1","Il6","Il1a","Il1b","Tnf","Mmp3","Mmp9","Slc5a1",
+                     "Slc5a2", # proximal connvoluted tubule
+                     "Cfh",
+               "Ireb2","Alas2","C78334","Slc12a3","Pvalb","Wnk1","Atp6v1g3","Aqp6", "Atp6v0d2","Slc4a1",
+                     "Slc26a7","Slc26a4","Aqp2","Hsd11b2","Scnn1g","Fst","Bst1","Slc14a2","Umod","Slc12a1",
+                     "Cldn10","Krt5","Krt14","Upk1b","Nphs1","Nphs2","Pecam1","Cdh5","Igfbp3","Acta2",
+                     "Ehd3","Nrp1","Col3a1","Lum","Fbn1","Prkg1","C1qa","C1qb","Aif1","Ptprc","Cd3e",
+                     "Cd14","Lst1","Lyz2","Cebpb","Cxcr6","Cd247","Nkg7","Cd7","Ccl5","Cd79a","Cd79b",
+                     "Ms4a1","Igkc","Ms4a7","Adap2","S100a8", "S100a9", "Ifitm1","Ly6g", "Lcn2","Cxcl1",
+                     "Acod1","Slc22a8","Slc7a12", "Krt19","Gadd45b", "Ripk3", "Tnf", "Tgfb1","Cd9","Nrxn3","Nphs1","Nphs2","Plvap","Enox1","Postn","Mki67","Serpine2","Fhl2","Des",
+                    
+                     "Tagln","Gata3", # SMC
+                     "Plat","Emcn","Kdr", # Glomerular endothelial cells
+                    "Apoe","Cst3","Aldob", # damaged Promimal tubule
+               "Clu","Tpm1","Spp1","Vim" # adaptive PT
+               ) %>% unique()
+
+Clustermakrers<- c("Lrp2","Slc34a1","Acsm1","Slc5a2","Slc5a1","Havcr1","Fn1","Col1a1","Notch2","Enox1","Klh13","Atp11a","Cfh","Ireb2","Alas2","C78334","Slc12a3","Pvalb","Wnk1","Atp6v1g3","Aqp6","Slc4a1","Rcan2","Kit","Slc26a4","Hmx2","Spink8","Slc26a7","Slc8a1", "Trpv5","Nphs1", "Calb1","Skap1", "Upk2a","Upk3a","Upk3b",
+                   "Aqp2","Atp6v1b1","Hsd11b2","Scnn1g","Fst","Bst1","Slc14a2","Umod","Slc12a1","Cldn10","Krt5","Krt14","Upk1b", 
+                   "Pecam1","Cdh5","Nrp1","Col3a1","Lum","Fbn1","C1qa","C1qb","Aif1","Fhl2","Lst1","Lyz2","Ptprc","Ly6g","Cebpb","Cxcr6","Cd247","Nkg7","Cd7","Ccl5","Cd79a","Cd79b","Ms4a1","Ly6g", "Lcn2","Slc22a8","Slc12a1", "Krt19","Mki67")
+
+FinalUsedMarkers<- c("Lrp2","Slc34a1","Acsm1","Atp11a","Slc5a2","Atp6v1g3","Slc26a4","Hmx2","Spink8","Slc26a7","Aqp6","Slc4a1","Rcan2","Kit","Aqp2","Hsd11b2" ,"Scnn1g","Slc8a1","Slc12a3","Wnk1","Fst","Bst1","Slc14a2","Umod","Slc12a1","Nphs1","Nrp1","Col3a1","Fbn1", "Fhl2","Lst1","Lyz2","Ptprc","Atp6v1b1","S100a9", "Ifitm1","Ly6g")
+
+ICAMarkers <- c("Slc26a7","Rcan2","Atp4a","Slc4a1","Aqp6","Kit")
+ICBMarkers<- c("Slc26a4","Hmx2","Spink8")
+PCMarkers <- c("Aqp2","Hsd11b2" ,"Scnn1g")
+
+#FinalUssedMarkers2<- c("Lrp2","Slc34a1","Acsm1","Cubn","Havcr1","Slc12a3","Trpm6","Pvalb","Wnk1","Slc8a1","Calb1","Trpv5","Slc12a1","Cldn10","Atp6v1g3","Aqp6","Slc26a4","Aqp2","Hsd11b2" ,"Scnn1g","Fst","Bst1","Slc14a2","Krt5","Krt14","Upk1b", "Pecam1","Cdh5","Igfbp3","Col3a1","Lum","Fbn1","Ireb2","Alas2","C78334","Ptprc","Lyz2","Lst1","C1qa","C1qb","Cxcr6","Cd247", "Nkg7","Cd7","Ccl5","Cd79b","Ms4a1","Igkc","Il1b","Cd14")
+
+FinalUssedMarkers2<- c("Lrp2","Slc34a1","Slc5a12", # PTS1
+                     "Cyp4a14", # PTS2
+                     "Slc7a12", # PTS3
+                     "Acsm1","Cubn","Havcr1","Slc12a3","Slc8a1","Calb1","Trpm6","Pvalb","Wnk1","Trpv5","Fst","Slc14a2","Slc12a1","Cldn10","Atp6v1g3","Aqp6","Slc26a4","Aqp2","Hsd11b2" ,"Scnn1g","Krt5","Krt14","Upk1b", "Col3a1","Lum","Fbn1","Pecam1","Igfbp3","Cdh5","Ptprc","Lyz2","Lst1","C1qa","C1qb","Il1b","Cd14","Cxcr6","Cd247", "Cd79b","Ms4a1","Igkc","Nkg7","Cd7","Ccl5","Ireb2","Alas2","C78334")
+
+KidneymarkersDir<- "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Candidatemarkers/"
+dir.create(KidneymarkersDir)
+KidneyTypeMakers<-list()
+# Epithelial markers
+KidneyTypeMakers[["POD"]]<- c("Nphs1","Nphs2","Wt1","Ptprq")# 
+KidneyTypeMakers[["PEC"]]<- c("Cldn1", "Cfh","Aldh1a2")
+KidneyTypeMakers[["PT"]] <- c("Lrp2","Slc34a1","Acsm1","Atp11a","Slc13a3","Notch2","Cubn","Vcam1","Havcr1","Fn1")
+KidneyTypeMakers[["PT_S1"]] <- c("Lrp2","Slc34a1","Slc5a12")
+KidneyTypeMakers[["PT_S2"]] <- c("Lrp2","Slc5a10","Cyp4a14")
+KidneyTypeMakers[["PT_S3"]] <- c("Lrp2", "Slc5a11")
+
+KidneyTypeMakers[["TL"]] <- c("Cryab","Tacstd2","Slc44a5")
+KidneyTypeMakers[["DTL"]] <- c("Aqp1", "Unc5b", "Id1","Slc14a2","Fst","Bst1")
+KidneyTypeMakers[["ATL"]] <- c("Sh3gl3","Prox1")
+KidneyTypeMakers[["TAL"]]<- c("Umod","Slc12a1","Cldn10")
+KidneyTypeMakers[["DCT"]] <- c("Slc12a3","Trpm6", "Trpv5")
+KidneyTypeMakers[["CNT"]] <- c("Scnn1a","Scnn1b","Kcnj10")
+KidneyTypeMakers[["PC"]] <- c("Aqp2","Hsd11b2" ,"Scnn1g")
+KidneyTypeMakers[["IC"]] <- c("Atp6v1g3","Atp6v1b1","Slc4a1")
+KidneyTypeMakers[["ICA"]] <- c("Slc26a7","Rcan2","Atp4a","Slc4a1","Aqp6","Kit")
+KidneyTypeMakers[["ICB"]] <- c("Slc26a4","Hmx2","Spink8")
+KidneyTypeMakers[["URO"]]<- c("Upk1b")
+
+
+# Inte markers
+
+KidneyTypeMakers[["EC"]] <- c("Pecam1","Cdh5")
+KidneyTypeMakers[["VSMC"]] <- c("Tagln","Gata3")
+KidneyTypeMakers[["GEC"]]<-c("Plat","Emcn","Kdr")
+
+KidneyTypeMakers[["FIB"]]<- c("Col3a1","Fbn1")
+
+
+# immune cells
+KidneyTypeMakers[["IMM"]]<- c("Ptprc")
+KidneyTypeMakers[["B"]]<- c("Igkc","Cd79a","Cd79b")
+KidneyTypeMakers[["T"]]<- c("Cxcr6","Cd247","Cd3e")
+KidneyTypeMakers[["NKT"]]<- c("Ccl5","Nkg7","Cd7")
+#KidneyTypeMakers[["MAST"]]<- c("KIT", "MS4A2")
+KidneyTypeMakers[["MAC"]]<- c("C1qa","C1qb","Aif1")
+KidneyTypeMakers[["NEU"]]<- c("S100a9","S100a8","Il1b")
+
+
+
+KidneyTypeMakers
+# Panoptosis
+# Il1b, MLKL, Gsdmd,Ripk3
+
+# UROrosis 
+# Fn1, Col1a1, Col3a1, Tgfb1
+# adaptive
+# VCAM1, DCDC2 and HAVCR1, C3, ICAM1
+# VCAM1 PROM1 ITGB8
+# Vcam1, Havcr1, Dcdc2, Icam1, Prom1, ITgb8
+
+#degenerative
+# SPP1, CST3, CLU and IGFBP7, APOE ALDOB
+# B2M S100A6
+# Spp1, Cst3, GDF15,Clu, Igfbp7, Apoe, Aldob, B2m, S100a6
+# agionegious PEC,
+# EGFR, VEGF, Cdh5
+
+# Egfr, Vegf, Cdh5
+KidneymarkersDir
+length(KidneyTypeMakers)
+for (i in 1:length(KidneyTypeMakers)) {
+  # Kidney Status type name
+  #i=18
+  KidneyTypeMakersType <- names(KidneyTypeMakers[i])
+  #ImmuneCellType <- "Mast_cells"
+  # create a director for the cell type
+  KidneyTypeMakersTypeDir <- paste0(KidneymarkersDir,
+        KidneyTypeMakersType,"/")
+  dir.create(KidneyTypeMakersTypeDir,showWarnings = FALSE)
+  setwd(KidneyTypeMakersTypeDir)
+  
+  DPlots<- DotPlot(scrna, features =KidneyTypeMakers[[KidneyTypeMakersType]] )+RotatedAxis()
+  ggsave(paste0(KidneyTypeMakersTypeDir, KidneyTypeMakersType, "_ReDotPlot.pdf"), plot= DPlots,height = 8, width = 6)
+ 
+  # generate each feature
+  #ImmuneDiffType[[ImmuneCellType]]
+  for (j in KidneyTypeMakers[[KidneyTypeMakersType]]) {
+    
+    
+    FeaturePlots <-
+      FeaturePlot(scrna, features =  j, order =TRUE) + RotatedAxis()
+    ggsave(
+      paste0(
+        KidneyTypeMakersTypeDir,
+        KidneyTypeMakersType,
+        "_",
+        j,
+        "_Feature_GeneMarkers_ReAnnoatation.pdf"
+      ),
+      plot = FeaturePlots,
+      height = 5,
+      width = 5
+    )
+    
+    FeaturePlotsSplit <-
+      FeaturePlot(scrna, features =  j, order =TRUE, split.by = "DataSet") + RotatedAxis()
+    ggsave(
+      paste0(
+        KidneyTypeMakersTypeDir,
+        KidneyTypeMakersType,
+        "_",
+        j,
+        "_Feature_GeneMarkers_ReAnnoatation_SplitData.pdf"
+      ),
+      plot = FeaturePlotsSplit,
+      height = 5,
+      width = 10
+    )
+  }
+  
+}
+
+
+```
+

@@ -1,0 +1,436 @@
+---
+title: "CisplatinGC_Integration"
+author: "Xin Wang"
+date: "2025-11-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+
+#install.packages('devtools') #assuming it is not already installed
+
+library(devtools)
+
+#install_github('andreacirilloac/updateR')
+# install.packages("sctransform")
+# install.packages("ggthemes")
+# loading the libarary
+library(updateR)
+
+
+library("sctransform")
+library("ggthemes")
+library(Seurat)
+library(Matrix)
+library(nichenetr)
+library(tidyverse)
+library(dplyr)
+
+library(biomaRt)
+library("data.table")
+
+
+library(umap)
+library(patchwork)
+library(cowplot)
+
+library(ggplot2)
+
+
+### we used discre color palettes from ggsci
+
+library("ggsci")
+library("ggplot2")
+library("gridExtra")
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+##########################################################################
+# step 1: preparation for the working environment and the sample details 
+##########################################################################
+
+## reading the loacal file and creat the seurat object:
+
+## set pathway:
+setwd("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/QualityControl/")
+
+### create a vector of convenient sample names, such as "D0","D3","D7" and "D28"
+
+samples=c("Vehicle","Cisplatin")
+
+outdir ="/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/QualityControl/"
+
+Inputdir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Preprocessed/"
+##########################################################################
+### step 2: read in the feature-barcode matrics generated from PIPseeker
+##########################################################################
+
+## generate a new list of elements of different types
+DataPipseq = list() 
+
+DataPipseq[[1]]<- ReadMtx(mtx = paste0(Inputdir,"Vehicle/raw_matrix/matrix.mtx.gz"),features = paste0(Inputdir,"Vehicle/raw_matrix/features.tsv.gz"),cells = paste0(Inputdir,"Vehicle/raw_matrix/barcodes.tsv.gz"))
+
+
+# DataPipseq[[2]]<- ReadMtx(mtx = paste0(Inputdir,"Vehicle_GC/raw_matrix/matrix.mtx.gz"),features = paste0(Inputdir,"Vehicle_GC/raw_matrix/features.tsv.gz"),cells = paste0(Inputdir,"Vehicle_GC/raw_matrix/barcodes.tsv.gz"))
+
+DataPipseq[[2]]<- ReadMtx(mtx = paste0(Inputdir,"Cisplatin/raw_matrix/matrix.mtx.gz"),features = paste0(Inputdir,"Cisplatin/raw_matrix/features.tsv.gz"),cells = paste0(Inputdir,"Cisplatin/raw_matrix/barcodes.tsv.gz"))
+
+# DataPipseq[[4]]<- ReadMtx(mtx = paste0(Inputdir,"Cisplatin_GC/raw_matrix/matrix.mtx.gz"),features = paste0(Inputdir,"Cisplatin_GC/raw_matrix/features.tsv.gz"),cells = paste0(Inputdir,"Cisplatin_GC/raw_matrix/barcodes.tsv.gz"))
+
+dim(DataPipseq[[2]])
+
+##########################################################################
+### step 3:Convert each feature-barcode matrix to a Seurat object
+##########################################################################
+# First create an empty list to hold the Seurat objects
+scrna.list = list(); 
+#scrna.list[[1]]=CreateSeuratObject(counts = Day0_Expression_Matrix, Project="Day0",min.cells = 3, min.features = 200)
+#scrna.list[[1]][["DataSet"]] = samples[1];
+
+#scrna.list[[2]]=CreateSeuratObject(counts = Day0_Expression_Matrix, Project="Day0",min.cells = 3, min.features = 200)
+#scrna.list[[2]][["DataSet"]] = samples[2];
+
+#scrna.list[[3]]=CreateSeuratObject(counts = Day0_Expression_Matrix, Project="Day0",min.cells = 3, min.features = 200)
+#scrna.list[[3]][["DataSet"]] = samples[3];
+
+#scrna.list[[4]]=CreateSeuratObject(counts = Day0_Expression_Matrix, Project="Day0",min.cells = 3, min.features = 200)
+#scrna.list[[4]][["DataSet"]] = samples[4];
+# a more efficient way
+# here we created the list to build the seurat objects
+# for the Vehicle, it seems that it showed good results
+ #i=3
+scrna.list[[1]]= CreateSeuratObject(counts = DataPipseq[[1]], project= samples[1],min.cells = 3, min.features = 100);
+  
+  ### here we measure the mitochondrial proportion for each datasets
+  scrna.list[[1]][["percent.mt"]] <- PercentageFeatureSet(scrna.list[[1]], pattern = "^Mt-")
+  
+  ### filtered the low quality cells that have less than 200 RNA or larger than 4000 and percentage mt high than 15%
+  scrna.list[[2]]<- 
+  subset(scrna.list[[i]], subset = nFeature_RNA > 100 & nFeature_RNA < 6000 & nCount_RNA >= 100 & percent.mt < 40)
+
+  ## measure the rDNA proportion for each datasets
+  scrna.list[[i]][["rDNA"]] <- PercentageFeatureSet(scrna.list[[i]], pattern = "^Rp[sl][[:digit:]]")
+  
+  scrna.list[[i]][["DataSet"]]=samples[i];
+  ### define the default with RNA
+  DefaultAssay(scrna.list[[i]]) <- "RNA"
+}
+```
+
+
+# trouble shooting for the diagnostics of the Cisplatin
+```{r}
+
+# check the barcod
+# counts is raw matrix (genes x barcodes)
+i=2
+
+counts <- DataPipseq[[i]]      # replace i/sample
+cat("Barcodes in raw matrix:", ncol(counts), "\n")
+umi_per_bc <- Matrix::colSums(counts)
+summary(umi_per_bc)
+table(umi_per_bc > 200) 
+# packages
+library(Matrix)
+ #BiocManager::install("DropletUtils")
+library(DropletUtils)
+library(Seurat)
+library(SoupX)      # optional, run after emptyDrops if desired
+
+# counts is genes x barcodes sparse matrix
+# quick sanity
+print(class(counts))
+print(dim(counts))   # genes x barcodes
+
+# 1) barcodeRanks to inspect and get knee
+br <- barcodeRanks(counts)
+summary(br$total)
+# optional quick plot (interactive / save to file)
+png("barcodeRanks.png", width=800, height=600)
+plot(br$rank, br$total, log="xy", xlab="Rank", ylab="Total counts", main="barcodeRanks")
+o <- order(br$rank)
+lines(br$rank[o], br$fitted[o], col="red")
+abline(v = br$knee, col="blue", lty=2)
+abline(v = br$inflection, col="green", lty=2)
+legend("bottomleft", legend=c("fitted","knee","inflection"), col=c("red","blue","green"), lty=1:2)
+dev.off()
+
+cat("knee:", br$knee, " inflection:", br$inflection, "\n")
+
+# 2) Prefilter barcodes to reduce compute
+# Strategy: keep barcodes with total counts >= min(100, br$knee/100) OR up to e.g. top 200k barcodes by total
+totals <- Matrix::colSums(counts)
+# Option A: keep barcodes with total >= 100
+keep1 <- which(totals >= 100)
+
+# Option B: if you want to keep up to top N barcodes by UMI
+Ntop <- 200000
+ord <- order(totals, decreasing = TRUE)
+keep2 <- ord[1:min(Ntop, length(ord))]
+
+# Combine heuristics to form final prefilter
+prefilter_bcs <- sort(unique(c(keep1, keep2)))
+length(prefilter_bcs)  # how many barcodes we'll run emptyDrops on
+
+# Subset counts for emptyDrops (important to reduce memory/time)
+counts_prefilt <- counts[, prefilter_bcs]
+
+# 3) Run emptyDrops
+# Lower is the minimum total count below which we don't test (set to 100 or lower for sensitive)
+set.seed(100)
+ed <- emptyDrops(counts_prefilt, lower = 100)
+# ed is a DataFrame with p.value, FDR, etc. Many rows will be NA for extremely low totals.
+
+# How many barcodes are called as cells?
+table(ed$FDR <= 0.05, useNA = "ifany")
+sum(ed$FDR <= 0.05, na.rm = TRUE)  # number of barcodes with FDR <= 0.01
+
+# 4) Get the barcodes selected as cells
+called <- rownames(ed)[which(ed$FDR <= 0.05)]
+length(called)  # number of called cell barcodes from this prefilter set
+
+# Map back to original column names (if counts had colnames)
+# If counts had colnames, prefilter_bcs are indices; convert indices to barcode names:
+if(!is.null(colnames(counts))) {
+  called_barcodes <- colnames(counts_prefilt)[rownames(ed) %in% called]
+} else {
+  # If no colnames, we will use indices
+  called_barcodes <- colnames(counts_prefilt)[which(ed$FDR <= 0.01)]
+}
+
+# 5) Create Seurat object from called barcodes
+counts_cells <- counts[, called_barcodes]  # subset original matrix by barcode names
+scrna.list[[3]] <- CreateSeuratObject(counts = counts_cells, project = "project1", min.features = 0) 
+# (we set min.features=0 because we already called droplets; you'll filter below)
+
+# 6) QC: compute mitochondrial % and basic filters; adjust thresholds as needed
+scrna.list[[3]][["percent.mt"]] <- PercentageFeatureSet(scrna.list[[3]], pattern = "^Mt-")  # human; change for mouse (^mt-)
+summary(seu$nFeature_RNA)
+# example filter: keep nFeature_RNA > 100 and pct.mt < 25
+seu <- subset(seu, subset = nFeature_RNA >= 100 & nCount_RNA >= 100 & percent.mt < 40)
+cat("Cells after QC:", ncol(seu), "\n")
+
+# 7) Optional: SoupX ambient correction (works on raw matrices)
+# If you want SoupX: provide raw (tod) and 'toc' (table of counts: cell counts) as raw and called
+# Example:
+# sc <- SoupChannel(tod = counts, toc = as.matrix(counts_cells))
+# sc <- autoEstCont(sc)
+# adjusted <- adjustCounts(sc)
+# Then rebuild Seurat from 'adjusted' counts for called_barcodes
+# empty barcodes
+```
+
+
+```{r}
+##########################################################################
+### step 4:Merge the Seurate objects into a single object
+##########################################################################
+# check the different objects:
+scrna.list[[1]]@meta.data
+
+## merge might not be a good way for the intergration, instead we used the integration by find the integration features
+#scrna <- merge(x=scrna.list[[1]], y=c(scrna.list[[2]],scrna.list[[3]],scrna.list[[4]]), add.cell.ids = c("A","B","C","D"), project="Pyelonephritis");
+## we used Intergration funciton
+
+# normalize and identify variable features for each dataset independently, be attendtion we need to using the normalizatiopn for the datasets
+ifnb.list <- lapply(X = scrna.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = ifnb.list)
+# We then identify anchors using the FindIntegrationAnchors() function, which takes a list of Seurat objects as input, and use these anchors to integrate the two datasets together with IntegrateData().
+scrna<-  FindIntegrationAnchors(object.list = ifnb.list, anchor.features = features)
+# this command creates an 'integrated' data assay
+scrna <- IntegrateData(anchorset = scrna)
+DefaultAssay(scrna) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+scrna <- ScaleData(scrna, verbose = FALSE)
+scrna <- RunPCA(scrna, npcs = 20, verbose = FALSE)
+scrna <- RunUMAP(scrna, reduction = "pca", dims = 1:20)
+scrna <- FindNeighbors(scrna, reduction = "pca", dims = 1:20)
+scrna <- FindClusters(scrna, resolution = 0.6)
+
+
+## change the order of days 
+levels(factor(scrna@meta.data$DataSet))
+
+scrna@meta.data$DataSet <- ordered(factor(scrna@meta.data$DataSet),levels = c("D0", "D3", "D7","D28"))
+
+levels(scrna@meta.data$DataSet)
+
+
+# Visualization
+pdf("UmapDimPlot.pdf", width = 13, height = 6)
+p1 <- DimPlot(scrna, reduction = "umap", group.by = "DataSet")
+p2 <- DimPlot(scrna, reduction = "umap", label = TRUE, repel = TRUE)
+p1 + p2
+
+dev.off()
+
+pdf("UmapDimPlot_Withlabel.pdf", width = 15, height = 5)
+p4 <- DimPlot(scrna, reduction = "umap", split.by ="DataSet",label = TRUE)
+
+p4
+
+dev.off()
+
+
+pdf(sprintf("%s/UMAP.%d.pdf", outdir, nPC), width = 10, height = 5);
+#p1 <- DimPlot(object = scrna, reduction = "tsne", group.by = "DataSet", split.by ="DataSet",pt.size=0.1)
+p2 <- DimPlot(object = scrna, reduction = "umap", group.by = "DataSet", split.by ="DataSet",  pt.size=0.1)
+
+?DimPlot
+p2
+dev.off()
+
+##########################################################################
+### step 4:Annotate the cluster and measure the different proportion
+##########################################################################
+
+## 4.1 check the structure of seurat integrated datassets
+
+str(scrna@meta.data)
+# Because it took such a long time, I will save all the intergerated object as an RDS file, next time I will not intergrate and read the RDS file diretly
+saveRDS(scrna, file =sprintf("%s/MergedSeuratObject_Pyelonephritis.RDS",outdir))
+scrna@meta.data
+# For new datasets, we only read the RDS file 
+#################
+#################
+## we can generate mergeseurate object from here
+rm(allen_reference)
+rm(Cluster0subset)
+scrna<-readRDS("../CellEvaluation/MergedSeuratObject_Pyelonephritis.RDS")
+# For new datasets, we generated more clusters
+#scrna<-FindClusters(scrna, resolution = 0.6)
+
+nrow(scrna@meta.data)
+
+D0<-scrna@meta.data %>% filter(`DataSet` == "D0") %>% pull(DataSet)
+length(D0)
+
+D3<-scrna@meta.data %>% filter(`DataSet` == "D3") %>% pull(DataSet)
+length(D3)
+
+
+D7<-scrna@meta.data %>% filter(`DataSet` == "D7") %>% pull(DataSet)
+length(D7)
+
+D28<-scrna@meta.data %>% filter(`DataSet` == "D28") %>% pull(DataSet)
+length(D28)
+
+
+## 4.2 measure the number of cluster 3 in D0 and D7
+D0Cluster3<- scrna@meta.data %>% filter(`DataSet` == "D0" & `seurat_clusters` == 3) %>% pull(DataSet)
+length(D0Cluster3)
+D3Cluster3<- scrna@meta.data %>% filter(`DataSet` == "D3" & `seurat_clusters` == 3) %>% pull(DataSet)
+D7Cluster3<- scrna@meta.data %>% filter(`DataSet` == "D7" & `seurat_clusters` == 3) %>% pull(DataSet)
+D28Cluster3<- scrna@meta.data %>% filter(`DataSet` == "D28" & `seurat_clusters` == 3) %>% pull(DataSet)
+
+# different number of cells in each cluster
+table(scrna@meta.data$seurat_clusters)
+# total number of cells in all clusters
+length(scrna@meta.data$seurat_clusters)
+# check the name of different clusters
+
+names(table(scrna@meta.data$seurat_clusters))
+## 4.3 add the proportion of each cluster and show on the annotated clusters 
+df<- data.frame(clu=names(table(scrna@meta.data$seurat_clusters)), percentage= sprintf("%1.2f", 100*table(scrna@meta.data$seurat_clusters)/length(scrna@meta.data$seurat_clusters)))
+## then add the proportion into the meta data
+scrna@meta.data$ClusterPercent <- df[match(scrna@meta.data$seurat_clusters,df$clu),2]
+
+
+## we also added the proportion of each cluster based on the different cluster at different time points
+
+# get the number of each cluster at different time points
+table(scrna@meta.data$TimepointCluster)
+# get the number of all cluster at different time points
+table(scrna@meta.data$DataSet)
+# Firstly, create a new column to combine Dataset and cluster
+scrna@meta.data$TimepointCluster<-paste0(scrna@meta.data$DataSet,":",scrna@meta.data$seurat_clusters)
+tail(scrna@meta.data)
+## add the proportion of each cluster at different time points
+TimeDf <- data.frame(Timecluster=names(table(scrna@meta.data$TimepointCluster)), percentage= sprintf("%1.2f", 100*table(scrna@meta.data$TimepointCluster)/length(scrna@meta.data %>% filter (`DataSet` == strsplit(scrna@meta.data$TimepointCluster,":") [[1]][1]) %>% pull(DataSet))))
+TimeDf
+
+## we then added the TimeClusterPercentage
+scrna@meta.data$TimeClusterPercentage <- TimeDf[match(scrna@meta.data$TimepointCluster, TimeDf$Timecluster),2]
+scrna@meta.data
+
+## add the annotation with the proportion
+
+#nrow(scrna@meta.data[scrna@meta.data$seurat_clusters==3& scrna@meta.data$DataSet == "D0",])
+
+#nrow(scrna@meta.data[scrna@meta.data$seurat_clusters==3& scrna@meta.data$DataSet == "D7",])
+### before adding the annotation, we added the number of cluster and generate the figure
+
+######################################################################################################################################################################
+### For Figure 1A: The Uniform Manifold Approximation and Projection (UMAP) of sequenced cells from different time points of bacterial infections on kidney
+######################################################################################################################################################################
+ggplotColours <- function(n = 6, h = c(0, 360) + 15){
+  if ((diff(h) %% 360) < 1) h[2] <- h[2] - 360/n
+  hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
+}
+
+color_list <- ggplotColours(n=12)
+
+color_list
+
+### using weanderson
+### only for three - five color combination
+#install.packages("wesanderson")
+library(wesanderson)
+## names
+names(wes_palettes)
+
+
+
+### use Rcolor Breweer paletters 
+library(RColorBrewer) 
+# scale_color_brewer(palette = "Dark2")
+
+###### the best way to get more than 20 color by interpolate existing ones with constructor fucntion colorRampPallet
+
+## get the number of colors
+colorCounts =length(unique(scrna@meta.data$seurat_clusters))
+## get the color palette
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+clustercolor<-getPalette(colorCounts)
+
+nPC = 20
+pdf(sprintf("%s/UMAP_V0310_SCIcolor.%d.pdf", outdir, nPC), width =6, height = 5);
+#p1 <- DimPlot(object = scrna, reduction = "tsne", group.by = "DataSet", split.by ="DataSet",pt.size=0.1)
+p2 <- DimPlot(object = scrna, reduction = "umap",  pt.size=0.1, label = T,repel = TRUE ,cols=clustercolor) 
+  #scale_fill_manual(values = getPalette(colorCounts))
+#p3 <- DimPlot(object = scrna, reduction = "umap", group.by = "DataSet", split.by ="DataSet",  pt.size=0.1)
+
+#DimPlot(scrna, label = FALSE,reduction = "umap",  pt.size=0.1)
+p2
+dev.off()
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

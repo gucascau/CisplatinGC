@@ -1,0 +1,312 @@
+---
+title: "Cisplatin_Annotation"
+author: "Xin Wang"
+date: "2025-11-24"
+output: html_document
+    The script is used for the Cisplatin and control cell type annotation
+    Three ways were used for the cell type annotation
+    1. find anchors between reference and query
+    2. manually annotation
+    3. use scVI 
+    
+    reference genome: Mouse Kidney Atlas (MKA) & MKA-Extended: Single-cell and single-nucleus reference atlases of the mouse kidney
+    
+note: we have generated the preprocessed single cell object. The object includes general seurat pipelines : normalization, scaling, feature selection, clustering,and umap. Additional quality control, deboulets removing, batch effects were also used.
+---
+
+```{r setup, include=FALSE}
+
+library(dplyr)
+library(Seurat)
+library(patchwork)
+
+#install.packages('devtools') #assuming it is not already installed
+
+library(devtools)
+
+#install_github('andreacirilloac/updateR')
+# install.packages("sctransform")
+# install.packages("ggthemes")
+# loading the libarary
+library(updateR)
+
+
+library("sctransform")
+library("ggthemes")
+library(Seurat)
+library(Matrix)
+library(nichenetr)
+library(tidyverse)
+library(dplyr)
+
+library(biomaRt)
+library("data.table")
+
+
+library(umap)
+library(patchwork)
+library(cowplot)
+
+library(ggplot2)
+
+
+### we used discre color palettes from ggsci
+
+library("ggsci")
+library("ggplot2")
+library("gridExtra")
+
+
+library(harmony)
+library(Seurat)
+#library(SeuratData)
+library(tidyverse)
+
+#library(BPCells)
+library(ggplot2)
+library("devtools")
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+#library(tibble)
+#library(future)
+library(harmony)
+library(here)
+library(patchwork)
+library(future)
+library(monocle3)
+#devtools::install_dev("remotes")
+#remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
+#remotes::install_github(repo ='chris-mcginnis-ucsf/DoubletFinder' )
+#install.packages("DoubletFinder")
+library(DoubletFinder)
+library(future.callr)
+library("ggsci")
+
+library(reticulate)
+library(anndata)
+#devtools::install_github("cellgeni/sceasy")
+library(sceasy)
+
+library(Seurat)
+library(SeuratData)
+library(sceasy)
+library(reticulate)
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+##########################################################################
+# step 1: preparation for the working environment and the sample details 
+##########################################################################
+
+## reading the loacal file and creat the seurat object:
+
+## set pathway:
+
+setwd("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Annotation/")
+
+### create a vector of convenient sample names, such as "D0","D3","D7" and "D28"
+
+samples=c("Vehicle","Cisplatin")
+
+Outdir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Annotation/"
+QCdir ="/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/QualityControl/"
+dir.create(QCdir)
+DoubletDir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/DoubletRemoveal/"
+
+dir.create(DoubletDir)
+
+MergedDir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/MergedObj/"
+dir.create(MergedDir)
+
+IntegrationDir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Integration/"
+dir.create(IntegrationDir)
+Inputdir = "/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Integration/"
+
+```
+
+# 
+```{r}
+##########################################################################
+### step 1: read in the single cell object we preproceeded.
+##########################################################################
+
+scrna<- readRDS(paste0(Inputdir,"CisplatinVsVehicle_singlecell_doublet_harmony_v0618.RDS"))
+
+# we subclustered the cluster 6
+
+```
+
+# #####################################################
+# we used the reference dataset from MRT
+# #####################################################
+```{r}
+# reference input
+reference <- readRDS("/Users/XXW004/Documents/Projects/RuizRosado/PIPseq/Results/Evaluation_V022723/CellEvaluation_Subclustering_V0803/AnnotationValidation/Mouse_ATLAS_reference.rds")
+reference <- UpdateSeuratObject(reference)
+# Variable features
+reference <- FindVariableFeatures(reference, selection.method = "vst", nfeatures = 4000)
+scrna <- FindVariableFeatures(scrna, selection.method = "vst", nfeatures = 4000)
+
+# Intersect features
+features <- intersect(VariableFeatures(reference), VariableFeatures(scrna))
+length(features)  # should be > 500 ideally
+
+# Transfer cell type labels
+DefaultAssay(reference) <- "RNA"
+DefaultAssay(scrna) <- "RNA"
+
+
+
+# we used the find anchors between reference and query
+
+anchors <- FindTransferAnchors(reference = reference,
+                               query = scrna,
+                               features = features,
+                               dims = 1:30)
+
+
+predictions <- TransferData(anchorset = anchors,
+                            refdata = reference$cell_type,  # column with known labels
+                            dims = 1:30)
+
+scrna <- AddMetaData(scrna, metadata = predictions)
+
+scrna@meta.data %>% head()
+
+# manually annotate the single cells
+
+# we initially subset the cluster 6 
+Idents(scrna) <- "seurat_clusters"
+scrna<-FindSubCluster(scrna,cluster=c("6"),graph.name = "RNA_snn",subcluster.name = "Sub1", resolution = 0.3)
+Idents(scrna) <- "Sub1"
+scrna<-FindSubCluster(scrna,cluster=c("3"),graph.name = "RNA_snn",subcluster.name = "Sub2", resolution = 0.2)
+scrna@meta.data %>% head()
+Idents(scrna) <- "Sub2"
+DimPlot(scrna,split.by = "DataSet", label = T)
+
+```
+# #####################################################
+# we manually add the cell type name for each cluster
+# #####################################################
+```{r}
+# Cell Type
+FinalCluster<- as.character(levels(factor(scrna$Sub2)))
+FinalCluster
+CellType <- data.frame(cluster=FinalCluster , cell= FinalCluster)
+CellType
+# add the cluster name
+#CellType[CellType$cluster %in% c(0,3,9,12,18,19),2] <- "Proximal tubule"
+
+#CellType[CellType$cluster %in% c(0,3,9,12,18,19),2] <- "Proximal tubule"
+
+# CellType[CellType$cluster %in% c("0"),2] <- "Proximal tubule I"
+# CellType[CellType$cluster %in% c("9"),2] <- "Proximal tubule II"
+# CellType[CellType$cluster %in% c("12"),2] <- "Proximal tubule III"
+# #CellType[CellType$cluster %in% c("18"),2] <- "Proximal tubule IV"
+# CellType[CellType$cluster %in% c("19"),2] <- "Proximal tubule V"
+# 
+# 
+# CellType[CellType$cluster %in% c("18"),2] <- "Glomerular Endothelial Cell"
+# 
+
+CellType[CellType$cluster %in% c("6_0","6_1"),2] <- "TAL" # Thick ascending limb of LOH"
+CellType[CellType$cluster %in% c("6_2"),2] <- "DCT" # Distal convoluted tubule
+CellType[CellType$cluster %in% c("11"),2] <- "DTL" # immune cells
+
+CellType[CellType$cluster %in% c("0","5","7","8","1","2","4","14"),2] <- "PT" #"Proximal tubule"
+CellType[CellType$cluster %in% c("12"),2] <- "IC" #"Intercalated cells"
+CellType[CellType$cluster %in% c("3_0","3_1"),2] <- "PC" # "Principal cells"
+
+CellType[CellType$cluster %in% c("3_2"),2] <- "CNT" # "Connecting tubule"
+
+
+CellType[CellType$cluster %in% c("15","9","10"),2] <- "END" # "Endothelium"
+CellType[CellType$cluster %in% c("8","13"),2] <- "IMM" # immune cells
+
+
+# add the cell types
+scrna@meta.data$Raw_cell_type <- sapply(scrna@meta.data$Sub2, function(x){CellType[CellType$cluster %in% x,2]})
+levels(factor(scrna@meta.data$Raw_cell_type))
+
+Idents(scrna) <- "Raw_cell_type"
+
+DimPlot(scrna, split.by = "DataSet", label = T)
+Finalcelltypemarkers<- c("Lrp2","Slc34a1","Slc13a3", # Proximal tubule cells (PT)
+                      "Slc12a3","Pvalb","Wnk1",# Distal connecting tublue (DCT)
+
+                     "Umod","Slc12a1","Cldn10", # Thick ascending limb cells (TAL)
+                      "Klk1","Slc8a1","Calb1", # Connecting tubule (CNT)
+                     "Slc14a2","Fst","Bst1", # descending thin  limb cells (DTL)
+                     #"Akr1b1","Sh3gl3","Prox1", # ascending thin limb cells (ATL)
+                     #"Enox1","Thsd4", #Macula densa
+                      "Aqp2","Hsd11b2","Scnn1g", # principal cells (PC)
+                    "Atp6v1g3","Aqp6","Slc26a7", # Intercalated cells
+                   # "Krt5","Upk1b","Krt14", # Urothelium
+                    "Cdh5","Igfbp3","Pecam1", # Endothelium
+                    "Col3a1","Fbn1","Lum","Col1a1", # Fibroblast
+                    "Ireb2","Alas2", # Plasmacytoid dentritic cells
+                    "S100a8","S100a9","Il1b", # Neutrophil
+                    "C1qa","C1qb","Aif1", # Macrophage
+                    "Cxcr6","Cd247","Cd3e", # T cells
+                    "Igkc","Cd79a","Cd79b", # B cells
+                    "Ccl5","Nkg7","Cd7" # NK/Cd8 cells
+)
+
+DPlots<- DotPlot(scrna, features =Finalcelltypemarkers)+RotatedAxis()
+ggsave("Cisplatin_Vehicle_RawAnnotation.pdf", plot = DPlots, height = 4, width = 10)
+
+# save the RDS file 
+saveRDS(scrna, file = "Cisplatin_Vehicle_Raw_Predict_Annotation.RDS")
+```
+
+
+```{r}
+library(SeuratDisk)
+if (!requireNamespace("BiocManager", quietly=TRUE)) {
+    install.packages("BiocManager")
+}
+BiocManager::install("zellkonverter")
+
+
+library(zellkonverter)
+# Convert to SCE
+sce <- as.SingleCellExperiment(scrna)
+
+writeH5AD(sce, file = "Cisplatin_Vehicle_Raw_Predict_Annotation.h5ad")
+```
+
+
+```{r}
+Idents(scrna) <- "predicted.id"
+DimPlot(scrna,split.by = "DataSet", label = T)
+# increase the RNA resolution
+#scrna <- FindClusters(scrna,  resolution = 1.5,algorithm = 1)
+scrna@meta.data %>% head()
+
+
+DimPlot(scrna, split.by = "DataSet", label = T)
+
+RequestGene <- c("Havcr1")
+RequestGene <- c("Egf")
+RequestGene <- c("Slc5a2")
+RequestGene <- c("Slc34a1")
+RequestGene <- c("Cubn")
+RequestGeneFeaturePlot<-FeaturePlot(scrna, features = RequestGene, split.by = "DataSet")
+
+ggsave (paste0(RequestGene,"_ExpFeaturePlot.pdf"), plot = RequestGeneFeaturePlot, height = 4, width = 8)
+
+RequestGeneFeaturePlot<-FeaturePlot(scrna, features = RequestGene, split.by = "DataSet")
+
+ggsave (paste0(RequestGene,"_ExpFeaturePlot.pdf"), plot = RequestGeneFeaturePlot, height = 4, width = 8)
+
+
+```
+
