@@ -1,0 +1,435 @@
+```{r}
+# module purge
+# ml GCC/9.3.0
+# ml OpenMPI/4.0.3
+# ml R/4.4.0
+R
+capabilities()
+plot(1:20)
+```
+```{r}
+# loading the packages
+# check the session information
+sessionInfo()
+library(sf)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+
+#install.packages('devtools') #assuming it is not already installed
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+library(devtools)
+#install_github('andreacirilloac/updateR')
+# install.packages("sctransform")
+# install.packages("ggthemes")
+# loading the libarary
+library(updateR)
+
+library("sctransform")
+library("ggthemes")
+library(Seurat)
+
+# BiocManager::install("limma")
+# BiocManager::install("ComplexHeatmap")
+# BiocManager::install("biomaRt")
+# BiocManager::install("methrix")BiocManager::install("org.Hs.eg.db")
+# devtools::install_github("saeyslab/nichenetr")
+library(limma)
+library(nichenetr)
+library(tidyverse)
+library(dplyr)
+
+library(biomaRt)
+library("data.table")
+
+
+library(umap)
+library(patchwork)
+library(cowplot)
+library(installr)
+
+#install.packages("Matrix", repos = "http://cran.r-project.org")
+### we used discre color palettes from ggsci
+
+library("ggsci")
+library("ggplot2")
+library("gridExtra")
+
+
+#options(buildtools.check = function(action) TRUE )
+#devtools::install_url('https://cran.r-project.org/src/contrib/Archive/Matrix.utils/Matrix.utils_0.9.7.tar.gz')
+#devtools::install_github('cole-trapnell-lab/monocle3')
+#library(monocle3)
+
+library(harmony)
+library(Seurat)
+#library(SeuratData)
+library(tidyverse)
+
+#library(BPCells)
+library(ggplot2)
+library("devtools")
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+#library(tibble)
+#library(future)
+library(here)
+library(patchwork)
+library(future)
+library(monocle3)
+#devtools::install_dev("remotes")
+#remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
+#remotes::install_github(repo ='chris-mcginnis-ucsf/DoubletFinder' )
+#install.packages("DoubletFinder")
+library(DoubletFinder)
+library(future.callr)
+library("ggsci")
+library("ggplot2")
+library("gridExtra")
+
+```
+```{r}
+setwd(
+  "/home/gdbecknelllab/xxw004/gdjacksonlab/UUO/Results/UroBladderOrganoid/"
+)
+Indir <-
+  c(
+    "/home/gdbecknelllab/xxw004/gdjacksonlab/UUO/Datasets/UrotheiumOrganoid/GSE131909_RAW/"
+  )
+Outdir <-
+  c(
+    "/home/gdbecknelllab/xxw004/gdjacksonlab/UUO/Results/UroBladderOrganoid/"
+  )
+## check the files in the current directory
+Datafiles <-
+  list.files(
+    path = paste0(Indir, "/"),
+    recursive = F,
+    full.names = F
+  )
+
+# setting up the seed 
+set.seed(10000)
+```
+```{r}
+# create an empty list to store the objects
+scrna.list = list()
+
+# Before I am doing any thing, I have change the name to matrix.mtx.gz, features.tsv.gz and barcodes.tsv.gz for the convenience of reading the data.
+
+for (i in Datafiles) {
+  # initiate the seurate object
+  scrna.list[[i]] = ReadMtx(
+    mtx = paste0(Indir, i, "/matrix.mtx.gz"),
+    features = paste0(Indir, i, "/features.tsv.gz"),
+    cells = paste0(Indir, i, "/barcodes.tsv.gz")
+  )
+  
+  scrna.list[[i]] <- as(scrna.list[[i]], "dgCMatrix")
+  # initiate the seurate object
+  #scrna.list[[name2]]<- CreateSeuratObject(counts=rds, project= name2)
+  scrna.list[[i]] = CreateSeuratObject(
+    counts = scrna.list[[i]],
+    project = i,
+    min.cells = 3,
+    min.features = 200
+  )
+  
+  
+  # rename the cell with name id
+  scrna.list[[i]] <- RenameCells(scrna.list[[i]], add.cell.id = i)
+  ## using the assign the name to the objects
+  assign (i, scrna.list[[i]])
+  ## create a group that show the name of samples
+  scrna.list[[i]]$DataSet <-
+    rep(i, length(scrna.list[[i]]$orig.ident))
+  
+  scrna.list[[i]]$percent.mt <-
+    PercentageFeatureSet(scrna.list[[i]], pattern = "^mt-")
+  scrna.list[[i]]$rDNA <-
+    PercentageFeatureSet(scrna.list[[i]], pattern = "^Rp[sl][[:digit:]]")
+  
+  scrna.list[[i]] <-
+    subset(
+      scrna.list[[i]],
+      subset = nFeature_RNA > 200  &
+        nFeature_RNA < 8000 &
+        nCount_RNA < 16000 & percent.mt < 20 & rDNA < 40
+    )
+  scrna.list[[i]] <- NormalizeData(scrna.list[[i]])
+  scrna.list[[i]] <- ScaleData(scrna.list[[i]])
+  scrna.list[[i]] <-
+    FindVariableFeatures(scrna.list[[i]],
+                         selection.method = "vst",
+                         nfeatures = 2000)
+  scrna.list[[i]] <- RunPCA(scrna.list[[i]])
+  # ElbowPlot(seurat_obj)
+  scrna.list[[i]] <- FindNeighbors(scrna.list[[i]], dims = 1:20)
+  scrna.list[[i]] <- RunUMAP(scrna.list[[i]], dims = 1:20)
+  
+}
+```
+
+```{r}
+## merge might not be a good way for the intergration, instead we used the integration by find the integration features
+
+
+scrna <-
+  merge(
+    x = scrna.list[[1]],
+    y = scrna.list[[2]],
+    project = "UroBladderOrganoid"
+  )
+
+# check the meta data
+levels (as.factor(scrna@meta.data$DataSet ))
+
+scrna@meta.data$DataSet <-
+  ordered(factor(scrna@meta.data$DataSet),
+          levels = c("GSM3827176_NMU_O_D", "GSM3827175_NMU_O_P"))
+
+scrna@meta.data %>% tail()
+# create a condition details with and without infection
+
+# measure the mitochondrial percentage
+scrna[["percent.mt"]] <-
+  PercentageFeatureSet(scrna, pattern = "^mt-")
+scrna[["rDNA"]] <-
+  PercentageFeatureSet(scrna, pattern = "^Rp[sl][[:digit:]]")
+
+#VlnPlot(scrna, features = c("percent.mt", "nCount_RNA", "nFeature_RNA","rDNA"))
+ QCReport <-
+   VlnPlot(
+     scrna,
+     features = c("rDNA", "percent.mt", "nCount_RNA", "nFeature_RNA") ,
+     split.by = "DataSet",
+     pt.size=0,
+     ncol = 1
+   )
+
+ggsave(filename = "SampleQC_reports.pdf",plot = QCReport, height = 12, width = 12 )
+
+pdf("UroBladderOrganoid_Feature.pdf", height = 4, width = 6)
+VlnPlot(scrna, features = c("nFeature_RNA"), group.by = "DataSet",pt.size=0 )
+dev.off()
+
+pdf("UroBladderOrganoid_nCounts.pdf", height = 4, width = 6)
+VlnPlot(scrna, features = c("nCount_RNA"), group.by = "DataSet",pt.size=0 )
+dev.off()
+
+pdf("UroBladderOrganoid_mtPercent.pdf", height = 4, width = 6)
+VlnPlot(scrna, features = c("percent.mt"), group.by = "DataSet",pt.size=0,y.max=80 )
+dev.off()
+
+
+
+### filtered the low quality cells that have less than 200 RNA and larger than 8000 and percentage mt high than 20%, rDNA higher than 40
+scrna <-
+  subset (scrna,
+          subset = nFeature_RNA > 200  &
+            nFeature_RNA < 8000 &
+            nCount_RNA < 16000 & percent.mt < 20 & rDNA < 40)
+```
+
+
+```{r}
+DoubletDir<- paste0(Outdir, "DoubletFinder/")
+dir.create(DoubletDir)
+setwd(DoubletDir)
+# Identify the doublet cells
+FindDoublets <- function(library_id, seurat_aggregate) {
+    #rnaAggr <- seurat_aggregate
+  seurat_obj <- subset(seurat_aggregate, idents = library_id)
+  seurat_obj <- NormalizeData(seurat_obj)
+  seurat_obj <- ScaleData(seurat_obj)
+  seurat_obj <- FindVariableFeatures(seurat_obj, selection.method = "vst", nfeatures = 2000)
+  seurat_obj <- RunPCA(seurat_obj)
+  # ElbowPlot(seurat_obj)
+  seurat_obj <- FindNeighbors(seurat_obj, dims = 1:20)
+  seurat_obj <- RunUMAP(seurat_obj, dims = 1:20)
+  # DimPlot(seurat_obj)
+
+  ## pK Identification (no ground-truth) ---------------------------------------------------------------------------------------
+  sweep.res.list_kidney <- paramSweep(seurat_obj, PCs = 1:20, sct = F)
+  sweep.stats_kidney <- summarizeSweep(sweep.res.list_kidney, GT = FALSE)
+  bcmvn_kidney <- find.pK(sweep.stats_kidney)
+  pK <- bcmvn_kidney %>% 
+    # select the pK that corresponds to max bcmvn to optimize doublet detection
+    dplyr::filter(BCmetric == max(BCmetric)) %>%
+    dplyr::select(pK) 
+  pK <- as.numeric(as.character(pK[[1]]))
+  seurat_doublets <- doubletFinder(seurat_obj, PCs = 1:20, pN = 0.25, pK = pK,
+                               nExp = round(0.05*length(seurat_obj@active.ident)), 
+                               reuse.pANN = FALSE, sct = F)
+ 
+  # create doublet groupings and visualize results
+  DF.class <- names(seurat_doublets@meta.data) %>% str_subset("DF.classifications")
+  pANN <- names(seurat_doublets@meta.data) %>% str_subset("pANN")
+  
+  # visualize the results
+  p1 <- ggplot(bcmvn_kidney, aes(x=pK, y=BCmetric)) +
+    geom_bar(stat = "identity") + 
+    ggtitle(paste0("pKmax=",pK)) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  p2 <- DimPlot(seurat_doublets, group.by = DF.class)
+  p3 <- FeaturePlot(seurat_doublets, features = pANN)
+  
+  # generate the plot for the doublet distribution
+ ggsave(filename = paste0(library_id,"_pKmax_distribution.pdf"), p1, height = 5, width = 6)
+  ggsave(filename = paste0(library_id,"_Dimplotdoublet_distribution.pdf"), p2, height = 5, width = 5)
+ ggsave(filename = paste0(library_id,"_Featureplotdoublet_distribution.pdf"), p3, height = 5, width = 5)
+ 
+  # create a df of barcodes and doublet designations
+  df_doublet_barcodes <- as.data.frame(cbind(rownames(seurat_doublets@meta.data), seurat_doublets@meta.data[[DF.class]]))
+  return(df_doublet_barcodes)
+}
+
+# take an aggregated snRNA seurat object and a list of library_id to find doublets. return a df of doublet barcodes
+# send DimPlot and FeaturePlot of doublets for each library to plots dir
+# ensure to set up the identity as each sample
+
+orig.ident<- levels(Idents(scrna))
+#scrna.list[["0DPI"]]
+# apply the findDoublets function
+list.doublet.bc <- lapply(orig.ident, function(x) {FindDoublets(x, seurat_aggregate = scrna)})
+
+list.doublet.bc %>% head()
+doublet_id <- list.doublet.bc %>%
+  bind_rows() %>%
+  dplyr::rename("doublet_id" = "V2") %>%
+  tibble::column_to_rownames(var = "V1") # this is the barcode column
+
+doublet_id %>% head()
+table(doublet_id) # quantify total doublet vs. singlet calls (expect ~6% doublets)
+# add the meta of doublet
+scrna <- AddMetaData(scrna, doublet_id)
+ 
+saveRDS(scrna, file = "UroBladderOrganoid_scrna_merged_withdoublets.rds")
+# remove the doublets
+scrna<-subset(scrna, subset= (doublet_id == "Singlet"))
+
+# we select the single cells from the vehicle
+#scrna <- readRDS("scrna_merged_withdoublets.rds")
+
+#saveRDS(scrna, file = "UroBladderOrganoid_scrna_merged_withoutdoublets.rds")
+
+
+ VQCReport <-
+   VlnPlot(
+     scrna,
+     features = c("rDNA", "percent.mt", "nCount_RNA", "nFeature_RNA") ,
+     #split.by = "DataSet",
+     pt.size=0,
+     ncol = 1
+   )
+
+ggsave(filename = "UroBladderOrganoid_SampleQC_reports.pdf",plot = VQCReport, height = 12, width = 4 )
+```
+```{r}
+
+IntegratedDir<- paste0(Outdir, "IntegratedUroBladder/")
+dir.create(IntegratedDir)
+setwd(IntegratedDir)
+# # enable parallel processing via future package
+# plan("multiprocess", workers = 10) 
+# options(future.globals.maxSize = 100000 * 1024^2) # for 100 Gb RAM
+# plan()
+#"mitoPercent","Rpl", "nCount_RNA", "nFeature_RNA"
+# 
+scrna <- scrna %>%
+    NormalizeData() %>%
+    FindVariableFeatures(selection.method = "vst") %>% 
+    ScaleData() 
+
+scrna <- RunPCA(scrna, verbose = TRUE,  npcs = 30)
+# ElbowPlot(rnaAggr, ndims = 50) # to determine number of dimensions for clustering
+scrna <- RunHarmony(scrna, group.by.vars = c("DataSet"), reduction.save = "harmony")
+scrna <- RunUMAP(scrna, dims = 1:30, reduction = "harmony")
+scrna <- FindNeighbors(scrna, dims = 1:30,  reduction = "harmony")
+scrna <- FindClusters(scrna,  resolution = 0.4,algorithm = 1)
+
+
+# scrna <- FindNeighbors(scrna, dims = 1:30,  reduction = "harmony", graph.name = "Test")
+# scrna <- FindClusters(scrna,  resolution = 0.1,algorithm = 1, graph.name = "Test")
+
+#rnaAggr@meta.data$doublet_viz <- ifelse(rnaAggr@meta.data$doublet_id == "Singlet",0,1)
+#DefaultAssay(scrna) <-"SCT"
+# draw the dimplot grouped by doublet_id
+DimplotScrna <- DimPlot(scrna, reduction = "umap", label = T) 
+DimplotScrna
+DimplotScrnaSplit <- DimPlot(scrna, reduction = "umap",split.by = "DataSet", label = T) 
+DimplotScrnaSplit
+
+ggsave(filename = "DimplotScrnat.pdf", plot = DimplotScrna, width = 6, height = 5)
+ggsave(filename = "DimplotScrnaSplit.pdf", plot = DimplotScrnaSplit, width = 20, height = 5)
+
+saveRDS(scrna, file = "UroBladderOrganoid_singlecell_doublet_harmony_v0618.RDS")
+
+#scrna<- readRDS("UroBladderOrganoid_singlecell_doublet_harmony_v0618.RDS")
+
+# increase the RNA resolution
+#scrna <- FindClusters(scrna,  resolution = 1.5,algorithm = 1)
+
+scrna@meta.data %>% head()
+scrna@meta.data$DataSet %>% table()
+
+DimPlot(scrna)
+```
+
+
+```{r}
+CandidateMarkersDir <- paste0(Outdir, "CandidateMarkers/")
+dir.create(CandidateMarkersDir)
+setwd(CandidateMarkersDir)
+# check the markers 
+celltype.markers <- c("Krt14","Trp63","Shh","Krt5","Upk2","Upk3a","Upk3b","Upk1a","Upk1b","Krt20","Krt8","Krt18","Ccnd3","Gata3","Pparg","Kcnk2","Prom1","Aldh1a1","Sox2","Sox4","Cd44","Itgb4")
+
+BasalMarkers <- c("Krt14","Trp63","Shh","Krt5")
+for (i in celltype.markers){
+
+  FeaturePlots<-FeaturePlot(scrna, features =  i) +RotatedAxis()
+
+  ggsave(paste0(CandidateMarkersDir, i, "_Feature_GeneMarkers_Annoatation.pdf"), plot =FeaturePlots, height =5, width = 5)
+
+}
+
+
+# check the expression of these markers in the UroBladderOrganoid
+
+# the average expression of these markers in the UroBladderOrganoid
+
+
+markers_mouse_expanded_withothers<- c("Krt5","Krt14","Trp63",
+  "Krt8","Krt18","Foxa1",
+  "Upk1a","Upk1b","Upk2","Upk3b","Upk3a","Krt20",
+  "Lrp2","Slc34a1","Slc13a3", # Proximal tubule cells (PT)
+  "Slc12a3","Pvalb","Wnk1",# Distal connecting tublue (DCT)
+"Umod","Slc12a1","Cldn10", # Thick ascending limb cells (TAL)
+                      "Klk1","Slc8a1","Calb1", # Connecting tubule (CNT)
+                     "Slc14a2","Fst","Bst1", # descending thin  limb cells (DTL)
+                     #"Akr1b1","Sh3gl3","Prox1", # ascending thin limb cells (ATL)
+                     #"Enox1","Thsd4", #Macula densa
+                      "Aqp2","Hsd11b2","Scnn1g", # principal cells (PC)
+                    "Atp6v1g3","Aqp6","Slc26a7", # Intercalated cells
+                    "Cdh5","Igfbp3","Pecam1", # Endothelium
+                    "Col3a1","Fbn1","Lum","Col1a1", # Fibroblast
+                    "Ireb2","Alas2", # Plasmacytoid dentritic cells
+                    "S100a8","S100a9","Il1b", # Neutrophil
+                    "C1qa","C1qb","Aif1", # Macrophage
+                    "Cxcr6","Cd247","Cd3e", # T cells
+                    "Igkc","Cd79a","Cd79b", # B cells
+                    "Ccl5","Nkg7","Cd7" # NK/Cd8 cells
+  
+  )
+KidneyMarkersDotPlot<- DotPlot(scrna, features = markers_mouse_expanded_withothers) + RotatedAxis()
+ggsave("KidneyMarkersDotPlot_UroBladderOrganoid_Reclustered.pdf", plot=KidneyMarkersDotPlot, height=4, width=20)
+
+avg_exp <- AverageExpression(
+  object = scrna,
+  features = markers_mouse_expanded_withothers,
+  #group.by = "celltype"   # or "seurat_clusters", "condition"
+)
+
+```
