@@ -1,0 +1,24 @@
+2025-11-19_17-25-59   Running PIPseeker v3.3.0
+2025-11-19_17-25-59   Copyright (c) 2024 Fluent BioSciences. All rights reserved.
+2025-11-19_17-26-00   PIPseeker is up to date
+2025-11-19_17-26-00   Total Memory: 251.0GiB 
+2025-11-19_17-26-00   Available Memory: 242.3GiB
+2025-11-19_17-26-00   Available Disk Space: 110.4TiB 
+2025-11-19_17-26-00   FASTQ size: 28.6GiB 
+2025-11-19_17-26-00   Read lengths: R1=54 bases; R2=67 bases
+2025-11-19_17-26-00   Starting barcode processor
+2025-11-19_17-26-45    :: ERROR :: Pipeline Failure!
+Sequence in R1 is too short: required: 54, found: 53
+File: /home/gdbecknelllab/xxw004/gdmanlab/Projects/Databases/RawDZscRNAseq/Cisplatin/Cisplatin_S2_L001_R1_001.fastq.gz
+Read header: @A02109R:130:H32Y3DRX7:1:1101:2790:1000 1:N:0:TCCTGAGC+TCTACTCT
+Sequence: TCATCTATTCCATGAGGTAAGAGTCAGTCTCGAGCCATATGAGGTACCGGTGT
+Make sure you sequence to the required length, and that no trimming is applied to the reads.
+
+Job Statistics for 7474693:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7474693     xxw004 2025-11-19T17:25:40 2025-11-19T17:26:52   00:01:12  03:33.020     FAILED r1pl-hpcf-n[08+ 
+   7474693.batch            2025-11-19T17:25:40 2025-11-19T17:26:52   00:01:12  03:33.009     FAILED   r1pl-hpcf-n08 
+  7474693.extern            2025-11-19T17:25:40 2025-11-19T17:26:52   00:01:12  00:00.010  COMPLETED r1pl-hpcf-n[08+ 
+Requested Resources: billing=150,cpu=150,mem=1118250M,node=1
+Maximum CPU Memory: 11593.65M; 	CPU Efficiency: 1.97% of 03:00:00 core-walltime

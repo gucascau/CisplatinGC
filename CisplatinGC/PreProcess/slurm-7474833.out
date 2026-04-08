@@ -1,0 +1,10 @@
+/var/spool/slurmd/job7474833/slurm_script: line 31: 1790088 Killed                  perl ${script}/ExtractSequenceCorrectedBaseOnLength.pl -i 54 -f ${id}_S3_L001_R1_001.fastq -r ${id}_S3_L001_R2_001.fastq -o ${id}_Cfiltered_L001
+slurmstepd: error: Detected 1 oom_kill event in StepId=7474833.batch. Some of the step tasks have been OOM Killed.
+Job Statistics for 7474833:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7474833     xxw004 2025-11-20T17:24:15 2025-11-20T17:59:28   00:35:13  29:26.013 OUT_OF_ME+ r1pl-hpcf-n[12+ 
+   7474833.batch            2025-11-20T17:24:15 2025-11-20T17:59:28   00:35:13   00:29:26 OUT_OF_ME+   r1pl-hpcf-n12 
+  7474833.extern            2025-11-20T17:24:15 2025-11-20T17:59:28   00:35:13  00:00.012  COMPLETED r1pl-hpcf-n[12+ 
+Requested Resources: billing=150,cpu=150,mem=1118250M,node=1
+Maximum CPU Memory: 111823.91M; 	CPU Efficiency: 0.56% of 3-16:02:30 core-walltime

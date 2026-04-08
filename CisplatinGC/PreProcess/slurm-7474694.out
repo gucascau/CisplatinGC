@@ -1,0 +1,24 @@
+2025-11-19_17-26-03   Running PIPseeker v3.3.0
+2025-11-19_17-26-03   Copyright (c) 2024 Fluent BioSciences. All rights reserved.
+2025-11-19_17-26-04   PIPseeker is up to date
+2025-11-19_17-26-04   Total Memory: 250.7GiB 
+2025-11-19_17-26-04   Available Memory: 244.1GiB
+2025-11-19_17-26-04   Available Disk Space: 110.4TiB 
+2025-11-19_17-26-04   FASTQ size: 21.2GiB 
+2025-11-19_17-26-04   Read lengths: R1=54 bases; R2=67 bases
+2025-11-19_17-26-04   Starting barcode processor
+2025-11-19_17-26-49    :: ERROR :: Pipeline Failure!
+Sequence in R1 is too short: required: 54, found: 53
+File: /home/gdbecknelllab/xxw004/gdmanlab/Projects/Databases/RawDZscRNAseq/Vehicle-GC/Vehicle-GC_S3_L001_R1_001.fastq.gz
+Read header: @A02109R:130:H32Y3DRX7:1:1101:3821:1000 1:N:0:GCTACGCT+AGAGGATA
+Sequence: CATATCCACGATGTGCTTTGAGCACATTTCGAGCTCCCATTCACTCTGCGTTG
+Make sure you sequence to the required length, and that no trimming is applied to the reads.
+
+Job Statistics for 7474694:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7474694     xxw004 2025-11-19T17:25:44 2025-11-19T17:26:56   00:01:12  03:33.172     FAILED r1pl-hpcf-n[13+ 
+   7474694.batch            2025-11-19T17:25:44 2025-11-19T17:26:56   00:01:12  03:33.161     FAILED   r1pl-hpcf-n13 
+  7474694.extern            2025-11-19T17:25:44 2025-11-19T17:26:56   00:01:12  00:00.011  COMPLETED r1pl-hpcf-n[13+ 
+Requested Resources: billing=150,cpu=150,mem=1118250M,node=1
+Maximum CPU Memory: 11551.36M; 	CPU Efficiency: 1.97% of 03:00:00 core-walltime

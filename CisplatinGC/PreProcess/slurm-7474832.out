@@ -1,0 +1,12 @@
+cannot open file Cisplatin_S3_L001_R1_001.fastq at /home/gdbecknelllab/xxw004/gdmanlab/Projects/Databases/RawDZscRNAseq/Scripts/ExtractSequenceCorrectedBaseOnLength.pl line 39.
+*************
+*1.0 version*
+*************
+Job Statistics for 7474832:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7474832     xxw004 2025-11-20T17:24:12 2025-11-20T17:46:01   00:21:49  15:16.010     FAILED r1pl-hpcf-n[07+ 
+   7474832.batch            2025-11-20T17:24:12 2025-11-20T17:46:01   00:21:49  15:15.996     FAILED   r1pl-hpcf-n07 
+  7474832.extern            2025-11-20T17:24:12 2025-11-20T17:46:01   00:21:49  00:00.014  COMPLETED r1pl-hpcf-n[07+ 
+Requested Resources: billing=150,cpu=150,mem=1118250M,node=1
+Maximum CPU Memory: 52542.60M; 	CPU Efficiency: 0.47% of 2-06:32:30 core-walltime

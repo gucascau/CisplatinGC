@@ -1,0 +1,38 @@
+*************
+*1.0 version*
+*************
+*************
+*1.0 version*
+*************
+2025-11-22_09-13-42   Running PIPseeker v3.3.0
+2025-11-22_09-13-42   Copyright (c) 2024 Fluent BioSciences. All rights reserved.
+2025-11-22_09-13-42   PIPseeker is up to date
+2025-11-22_09-13-42   Total Memory: 2.0TiB 
+2025-11-22_09-13-42   Available Memory: 1.9TiB
+2025-11-22_09-13-42   Available Disk Space: 110.8TiB 
+2025-11-22_09-13-42   FASTQ size: 18.1GiB 
+2025-11-22_09-13-42   Read lengths: R1=54 bases; R2=67 bases
+2025-11-22_09-13-42   Starting barcode processor
+2025-11-22_09-43-11   Starting STAR
+2025-11-22_10-03-56   Reading BAM file
+2025-11-22_10-16-57   Read 221005301 lines from BAM file
+2025-11-22_10-17-03   Matching BAM data to genes
+2025-11-22_10-20-29   Processed 221005301 lines
+2025-11-22_10-20-29   Constructing molecule info object
+2025-11-22_10-25-49   Saving molecule info file
+2025-11-22_10-25-54   Generating raw matrix
+2025-11-22_10-27-02   Writing matrix files
+2025-11-22_10-27-56   Performing cell calling
+2025-11-22_10-28-20   Writing cell calling results
+2025-11-22_10-31-14   Running clustering
+2025-11-22_10-34-28   Generating Metrics
+2025-11-22_10-34-54   Creating summary report
+2025-11-22_10-34-55   PIPseeker completed successfully in 4873 seconds
+Job Statistics for 7474957:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7474957     xxw004 2025-11-22T04:12:50 2025-11-22T10:34:57   06:22:07   11:53:15  COMPLETED r1pl-hpcf-h[01+ 
+   7474957.batch            2025-11-22T04:12:50 2025-11-22T10:34:57   06:22:07   11:53:15  COMPLETED   r1pl-hpcf-h01 
+  7474957.extern            2025-11-22T04:12:50 2025-11-22T10:34:58   06:22:08  00:00.008  COMPLETED r1pl-hpcf-h[01+ 
+Requested Resources: billing=144,cpu=144,mem=6096240M,node=1
+Maximum CPU Memory: 369282.29M; 	CPU Efficiency: 1.30% of 38-05:04:48 core-walltime

@@ -1,0 +1,9 @@
+/var/spool/slurmd/job7474689/slurm_script: line 17: -l: command not found
+Job Statistics for 7474689:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7474689     xxw004 2025-11-19T17:12:37 2025-11-19T17:12:38   00:00:01  00:00.226     FAILED r1pl-hpcf-n[08+ 
+   7474689.batch            2025-11-19T17:12:37 2025-11-19T17:12:38   00:00:01  00:00.215     FAILED   r1pl-hpcf-n08 
+  7474689.extern            2025-11-19T17:12:37 2025-11-19T17:12:38   00:00:01  00:00.010  COMPLETED r1pl-hpcf-n[08+ 
+Requested Resources: billing=150,cpu=150,mem=1118250M,node=1
+Maximum CPU Memory: 9.63M; 	CPU Efficiency: 0.00% of 00:02:30 core-walltime

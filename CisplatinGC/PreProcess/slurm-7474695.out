@@ -1,0 +1,12 @@
+2025-11-19_17-27-14   Running PIPseeker v3.3.0
+2025-11-19_17-27-14   Copyright (c) 2024 Fluent BioSciences. All rights reserved.
+2025-11-19_17-27-14   PIPseeker is up to date
+2025-11-19_17-27-14   Problem detecting FASTQ files: No R1 FASTQ files found
+Job Statistics for 7474695:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7474695     xxw004 2025-11-19T17:26:55 2025-11-19T17:27:14   00:00:19  00:22.850     FAILED r1pl-hpcf-n[03+ 
+   7474695.batch            2025-11-19T17:26:55 2025-11-19T17:27:14   00:00:19  00:22.841     FAILED   r1pl-hpcf-n03 
+  7474695.extern            2025-11-19T17:26:55 2025-11-19T17:27:14   00:00:19  00:00.009  COMPLETED r1pl-hpcf-n[03+ 
+Requested Resources: billing=150,cpu=150,mem=1118250M,node=1
+Maximum CPU Memory: 272.84M; 	CPU Efficiency: 0.81% of 00:47:30 core-walltime
