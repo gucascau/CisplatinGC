@@ -5,6 +5,16 @@ Integration and analysis of mouse kidney single-cell RNA-seq data across four tr
 
 ---
 
+## Background
+
+Cisplatin is one of the most widely used chemotherapeutic agents for treating solid tumors, including lung, bladder, ovarian, testicular, head and neck, and gastric cancers. Its antitumor activity stems from forming DNA crosslinks that trigger apoptosis in rapidly dividing cancer cells. However, its clinical utility is substantially limited by dose-dependent nephrotoxicity, affecting up to 30–40% of patients.
+
+The kidney is the primary route of cisplatin excretion, making the proximal tubule the principal site of drug accumulation and injury. Cisplatin enters tubular epithelial cells via organic cation transporters, where it induces oxidative stress, mitochondrial dysfunction, and apoptosis — ultimately impairing glomerular filtration. Beyond the tubule, cisplatin damages peritubular endothelial cells and triggers immune infiltration, amplifying inflammation and, with repeated exposure, driving progression toward chronic kidney disease.
+
+Single-cell RNA sequencing (scRNA-seq) offers a powerful approach to dissect cell-type-specific transcriptional responses to cisplatin injury. By comparing Vehicle, Vehicle-GC, Cisplatin, and Cisplatin-GC conditions, we can distinguish direct nephrotoxic effects from tumor-mediated systemic alterations, identify vulnerable renal populations, and uncover candidate pathways for nephroprotective strategies.
+
+---
+
 ## Project Structure
 
 ```
