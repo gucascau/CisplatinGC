@@ -14,7 +14,6 @@
 # loading the packages
 # check the session information
 sessionInfo()
-library(sf)
 library(dplyr)
 library(Seurat)
 library(patchwork)
@@ -28,7 +27,7 @@ library(devtools)
 # install.packages("sctransform")
 # install.packages("ggthemes")
 # loading the libarary
-library(updateR)
+#library(updateR) # Windows-only, not available on Linux HPC
 
 library("sctransform")
 library("ggthemes")
@@ -48,10 +47,10 @@ library(biomaRt)
 library("data.table")
 
 
-library(umap)
 library(patchwork)
 library(cowplot)
-library(installr)
+#library(umap)     # not installed; Seurat uses uwot internally
+#library(installr) # Windows-only, not available on Linux HPC
 
 #install.packages("Matrix", repos = "http://cran.r-project.org")
 ### we used discre color palettes from ggsci
@@ -75,19 +74,19 @@ library(tidyverse)
 library(ggplot2)
 library("devtools")
 library("AnnotationDbi")
-library("org.Hs.eg.db")
+library("org.Mm.eg.db")  # mouse genome annotation (data is mouse)
 #library(tibble)
 #library(future)
 library(here)
 library(patchwork)
 library(future)
-library(monocle3)
+#library(monocle3) # not installed and not used in this script
 #devtools::install_dev("remotes")
 #remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
 #remotes::install_github(repo ='chris-mcginnis-ucsf/DoubletFinder' )
 #install.packages("DoubletFinder")
 library(DoubletFinder)
-library(future.callr)
+#library(future.callr) # not installed; parallel plan is disabled anyway
 library("ggsci")
 library("ggplot2")
 library("gridExtra")
@@ -106,7 +105,7 @@ Outdir <-
 ## check the files in the current directory
 Datafiles <-
   list.files(
-    path = paste0(Indir, "/"),
+    path = Indir,
     recursive = F,
     full.names = F
   )
@@ -185,7 +184,7 @@ for (i in Datafiles) {
 scrna <-
   merge(
     x = scrna.list[[1]],
-    y = c(scrna.list[[2]],scrna.list[[3]],scrna.list[[4]])
+    y = scrna.list[2:length(scrna.list)],
     project = "Cisplatin_Vehicle_GC_Integration"
   )
 
@@ -429,3 +428,4 @@ avg_exp <- AverageExpression(
   features = markers_mouse_expanded_withothers,
   #group.by = "celltype"   # or "seurat_clusters", "condition"
 )
+write.csv(avg_exp$RNA, file = paste0(CandidateMarkersDir, "AverageExpression_KidneyMarkers.csv"))

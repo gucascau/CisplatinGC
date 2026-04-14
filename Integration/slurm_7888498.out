@@ -1,0 +1,9 @@
+Fatal error: cannot open file '/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Scripts/CisplatinGC/Integration//Cisplatin_Vehicle_GC_Integration.r': No such file or directory
+Job Statistics for 7888498:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7888498     xxw004 2026-04-10T09:38:32 2026-04-10T09:38:34   00:00:02  00:00.816     FAILED   r1pl-hpcf-h01 
+   7888498.batch            2026-04-10T09:38:32 2026-04-10T09:38:34   00:00:02  00:00.814     FAILED   r1pl-hpcf-h01 
+  7888498.extern            2026-04-10T09:38:32 2026-04-10T09:38:34   00:00:02  00:00.001  COMPLETED   r1pl-hpcf-h01 
+Requested Resources: billing=24,cpu=24,mem=1016040M,node=1
+Maximum CPU Memory: 15.52M; 	CPU Efficiency: 2.08% of 00:00:48 core-walltime
