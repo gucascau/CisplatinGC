@@ -377,20 +377,20 @@ scrna@meta.data$DataSet %>% table()
 
 DimPlot(scrna)
 
-CandidateMarkersDir <- paste0(Outdir, "CandidateMarkers/")
-dir.create(CandidateMarkersDir)
-setwd(CandidateMarkersDir)
-# check the markers 
-celltype.markers <- c("Krt14","Trp63","Shh","Krt5","Upk2","Upk3a","Upk3b","Upk1a","Upk1b","Krt20","Krt8","Krt18","Ccnd3","Gata3","Pparg","Kcnk2","Prom1","Aldh1a1","Sox2","Sox4","Cd44","Itgb4")
+# CandidateMarkersDir <- paste0(Outdir, "CandidateMarkers/")
+# dir.create(CandidateMarkersDir)
+# setwd(CandidateMarkersDir)
+# # check the markers 
+# celltype.markers <- c("Krt14","Trp63","Shh","Krt5","Upk2","Upk3a","Upk3b","Upk1a","Upk1b","Krt20","Krt8","Krt18","Ccnd3","Gata3","Pparg","Kcnk2","Prom1","Aldh1a1","Sox2","Sox4","Cd44","Itgb4")
 
-BasalMarkers <- c("Krt14","Trp63","Shh","Krt5")
-for (i in celltype.markers){
+# BasalMarkers <- c("Krt14","Trp63","Shh","Krt5")
+# for (i in celltype.markers){
 
-  FeaturePlots<-FeaturePlot(scrna, features =  i) +RotatedAxis()
+#   FeaturePlots<-FeaturePlot(scrna, features =  i) +RotatedAxis()
 
-  ggsave(paste0(CandidateMarkersDir, i, "_Feature_GeneMarkers_Annoatation.pdf"), plot =FeaturePlots, height =5, width = 5)
+#   ggsave(paste0(CandidateMarkersDir, i, "_Feature_GeneMarkers_Annoatation.pdf"), plot =FeaturePlots, height =5, width = 5)
 
-}
+# }
 
 
 # check the expression of these markers in the Cisplatin_GC_Vehicle
