@@ -40,7 +40,7 @@ library(DoubletFinder)
 library(reticulate)
 # install zellkonverter if needed: BiocManager::install("zellkonverter")
 library(zellkonverter)
-
+#BiocManager::install("org.Mm.eg.db")
 options(future.globals.maxSize = 1e15)
 ```
 
@@ -252,26 +252,31 @@ table(MKA  = scrna$predicted.id,
 p_mka  <- DimPlot(scrna, group.by = "predicted.id",      label = TRUE, repel = TRUE) + ggtitle("MKA transfer")
 p_lake <- DimPlot(scrna, group.by = "predicted.id.Lake", label = TRUE, repel = TRUE) + ggtitle("Lake transfer")
 p_mka + p_lake
-ggsave("Reference_Comparison_DimPlot.pdf", plot = p_mka + p_lake, height = 5, width = 25)
+ggsave("Reference_Comparison_DimPlot.pdf", plot = p_mka + p_lake, height = 5, width = 12)
 
 saveRDS(scrna,
         file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
+
+      
 ```
+
+
+# The above label transfer was run using the sbatch script `Cisplatin_GC_Vehicle_Seurat_Annotation_sbatch.sh` on the cluster, which has more memory allocated for Seurat's FindTransferAnchors step.  The resulting annotated Seurat object is read back in below for the next steps of manual annotation and scVI export.
 
 # Step 2: Subclustering for manual annotation
 
 ```{r subclustering}
+scrna<- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
 Idents(scrna) <- "seurat_clusters"
-
-# Sub-cluster any heterogeneous clusters identified from the DotPlot inspection.
-# Adjust cluster numbers based on the UMAP / marker expression observed.
-scrna <- FindSubCluster(scrna, cluster = c("6"), graph.name = "RNA_snn",
-                        subcluster.name = "Sub1", resolution = 0.3)
-Idents(scrna) <- "Sub1"
-scrna <- FindSubCluster(scrna, cluster = c("3"), graph.name = "RNA_snn",
-                        subcluster.name = "Sub2", resolution = 0.2)
-Idents(scrna) <- "Sub2"
-DimPlot(scrna, split.by = "DataSet", label = TRUE, ncol = 2)
+# # Sub-cluster any heterogeneous clusters identified from the DotPlot inspection.
+# # Adjust cluster numbers based on the UMAP / marker expression observed.
+# scrna <- FindSubCluster(scrna, cluster = c("6"), graph.name = "RNA_snn",
+#                         subcluster.name = "Sub1", resolution = 0.3)
+# Idents(scrna) <- "Sub1"
+# scrna <- FindSubCluster(scrna, cluster = c("3"), graph.name = "RNA_snn",
+#                         subcluster.name = "Sub2", resolution = 0.2)
+# Idents(scrna) <- "Sub2"
+# DimPlot(scrna, split.by = "DataSet", label = TRUE, ncol = 2)
 ```
 
 # Step 3: Manual cell-type assignment
@@ -285,8 +290,11 @@ DimPlot(scrna, split.by = "DataSet", label = TRUE, ncol = 2)
 
 Finalcelltypemarkers <- c(
   "Lrp2","Slc34a1","Slc13a3",          # Proximal tubule (PT)
-  "Slc12a3","Pvalb","Wnk1",            # Distal convoluted tubule (DCT)
-  "Umod","Slc12a1","Cldn10",           # Thick ascending limb (TAL)
+  "Slc5a2","Slc34a1","Lrp2",           # Proximal tubule S1/S2 (PT_S1S2)
+  "Slc22a6","Slc22a8","Havcr1",       # Proximal tubule S3 (PT_S3)
+
+  "Slc12a3","Pvalb","Wnk1","Trpm6","Fxyd2",           # Distal convoluted tubule (DCT)
+  "Umod","Slc12a1","Cldn10","Kcnj1","Ptger3"           # Thick ascending limb (TAL)
   "Klk1","Slc8a1","Calb1",             # Connecting tubule (CNT)
   "Slc14a2","Fst","Bst1",              # Thin descending limb (DTL/LOH)
   "Aqp2","Hsd11b2","Scnn1g",           # Principal cells (PC)
@@ -302,22 +310,121 @@ Finalcelltypemarkers <- c(
   "Ccl5","Nkg7","Cd7"                 # NK/CD8 cells
 )
 
-DotPlot(scrna, features = Finalcelltypemarkers) + RotatedAxis()
+# create a list of canonical markers for each major cell type to guide manual annotation based on the DotPlot
+CelltypeMarkers <- list()
+CelltypeMarkers[["PT"]] <- c("Lrp2","Slc34a1","Slc13a3")
+CelltypeMarkers[["PT_S1S2"]] <- c("Slc5a2","Slc34a1","Lrp2")
 
+CelltypeMarkers[["PT_S3"]]   <- c("Slc5a1","Slc22a6","Slc22a8","Havcr1")
+CelltypeMarkers[["DCT"]] <- c("Slc12a3","Pvalb","Wnk1","Trpm6","Fxyd2")
+CelltypeMarkers[["TAL"]] <- c("Umod","Slc12a1","Cldn10","Kcnj1","Ptger3")
+CelltypeMarkers[["CNT"]] <- c("Klk1","Slc8a1","Calb1")
+CelltypeMarkers[["LOH"]] <- c("Slc14a2","Aqp1","Clcnka")
+CelltypeMarkers[["PC"]] <- c("Aqp2","Hsd11b2","Scnn1g")
+CelltypeMarkers[["IC"]] <- c("Atp6v1g3","Aqp6","Slc26a7")
+CelltypeMarkers[["POD"]] <- c("Wt1","Nphs1","Nphs2")
+CelltypeMarkers[["END"]] <- c("Cdh5","Pecam1","Kdr","Emcn","Plvap")
+CelltypeMarkers[["FIB"]] <- c("Col1a1","Col3a1","Fbn1","Lum","Pdgfra","Dcn")
+CelltypeMarkers[["pDC"]] <- c("Siglech","Bst2","Irf7")
+CelltypeMarkers[["Neutrophil"]] <- c("S100a8","S100a9","Ly6g","Mpo")
+CelltypeMarkers[["Macrophage"]] <- c("C1qa","C1qb","Aif1","Adgre1","Cd68")
+CelltypeMarkers[["T cells"]] <- c("Cd3e","Cd247","Trac")
+CelltypeMarkers[["B cells"]] <- c("Cd79a","Cd79b","Ms4a1")
+CelltypeMarkers[["NKCD8"]] <- c("Nkg7","Ccl5","Gzmb","Cd8a")
+# Intercalated cells A (subset of ICs) 
+CelltypeMarkers[["ICA"]]  <- c("Atp6v1g3","Aqp6","Kit","Slc4a1","Slc26a7") 
+# Intercalated cells B (subset of ICs)
+CelltypeMarkers[["ICB"]] <- c("Atp6v1g3","Slc26a4","Spink8","Hmx2") 
+CelltypeMarkers[["Mesangial"]] <- c("Pdgfrb","Acta2","Tagln")
+CelltypeMarkers[["Pericyte"]] <- c("Pdgfrb","Rgs5","Kcnj8")
+CelltypeMarkers[["PEC"]] <- c("Krt8","Krt18","Claudin1")
+CelltypeMarkers[["DTL"]] <- c("Aqp1","Unc5d","Adgrl3")
+# create a folder with the subfolder name "FeaturePlots" to check the feature plots of these markers for manual annotation
+
+
+MarkerDotPlot<- DotPlot(scrna, features = Finalcelltypemarkers) + RotatedAxis()
+
+# save into a figure file
+ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DotPlot.pdf",
+       plot = MarkerDotPlot, height = 5, width = 14)
+
+
+MarkerDotPlot<- DotPlot(scrna, features = Finalcelltypemarkers) + RotatedAxis()
+
+
+
+```
+
+```{r marker-feature-plots}
+# -----------------------------------------------------------------------
+# Create one subfolder per cell type under OutDir/MarkerFeaturePlots/,
+# then save a FeaturePlot and a DotPlot for each cell type's markers.
+# -----------------------------------------------------------------------
+MarkerDir <- file.path(OutDir, "MarkerFeaturePlots")
+dir.create(MarkerDir, showWarnings = FALSE, recursive = TRUE)
+
+for (ct in names(CelltypeMarkers)) {
+  markers <- CelltypeMarkers[[ct]]
+
+  # Only keep genes actually present in the object
+  markers_present <- intersect(markers, rownames(scrna))
+  if (length(markers_present) == 0) {
+    message("Skipping ", ct, " — no markers found in object")
+    next
+  }
+
+  # Create cell-type subfolder
+  ct_dir <- file.path(MarkerDir, ct)
+  dir.create(ct_dir, showWarnings = FALSE, recursive = TRUE)
+
+  # ---- FeaturePlot ----
+  fp <- FeaturePlot(scrna, features = markers_present, ncol = min(3, length(markers_present)))
+  ggsave(
+    filename = file.path(ct_dir, paste0(ct, "_FeaturePlot.pdf")),
+    plot     = fp,
+    width    = 6 * min(3, length(markers_present)),
+    height   = 5 * ceiling(length(markers_present) / 3)
+  )
+
+  # --- Feature Plot split by condtion ---
+  fp_split <- FeaturePlot(scrna, features = markers_present, split.by = "DataSet", ncol = min(3, length(markers_present)))
+  ggsave(
+    filename = file.path(ct_dir, paste0(ct, "_FeaturePlot_SplitByCondition.pdf")),
+    plot     = fp_split,
+    width    = 6 * min(3, length(markers_present)),
+    height   = 5 * ceiling(length(markers_present) / 3)
+  )
+
+  # ---- DotPlot ----
+  dp <- DotPlot(scrna, features = markers_present) + RotatedAxis() +
+        ggtitle(paste(ct, "markers"))
+  ggsave(
+    filename = file.path(ct_dir, paste0(ct, "_DotPlot.pdf")),
+    plot     = dp,
+    width    = 3 + length(markers_present) * 0.6,
+    height   = 5
+  )
+
+
+  message("Saved plots for: ", ct)
+}
+```
+
+```{r manual-annotation-setup}
 # --- Assign cell types per sub-cluster ---
 FinalCluster <- as.character(levels(factor(scrna$Sub2)))
 CellType <- data.frame(cluster = FinalCluster, cell = FinalCluster)
 
-# Update the mappings below after inspecting the DotPlot / UMAP:
-CellType[CellType$cluster %in% c("6_0","6_1"), 2] <- "TAL"
-CellType[CellType$cluster %in% c("6_2"),        2] <- "DCT"
-CellType[CellType$cluster %in% c("11"),         2] <- "LOH"
-CellType[CellType$cluster %in% c("0","5","7","8","1","2","4","14"), 2] <- "PT"
-CellType[CellType$cluster %in% c("12"),         2] <- "IC"
-CellType[CellType$cluster %in% c("3_0","3_1"),  2] <- "PC"
-CellType[CellType$cluster %in% c("3_2"),        2] <- "CNT"
-CellType[CellType$cluster %in% c("15","9","10"),2] <- "END"
-CellType[CellType$cluster %in% c("13"),         2] <- "IMM"
+# # Update the mappings below after inspecting the DotPlot / UMAP:
+# CellType[CellType$cluster %in% c("6_0","6_1"), 2] <- "TAL"
+# CellType[CellType$cluster %in% c("6_2"),        2] <- "DCT"
+# CellType[CellType$cluster %in% c("11"),         2] <- "LOH"
+# CellType[CellType$cluster %in% c("0","5","7","8","1","2","4","14"), 2] <- "PT"
+# CellType[CellType$cluster %in% c("12"),         2] <- "IC"
+# CellType[CellType$cluster %in% c("3_0","3_1"),  2] <- "PC"
+# CellType[CellType$cluster %in% c("3_2"),        2] <- "CNT"
+# CellType[CellType$cluster %in% c("15","9","10"),2] <- "END"
+# CellType[CellType$cluster %in% c("13"),         2] <- "IMM"
 
 scrna@meta.data$Raw_cell_type <- sapply(
   scrna@meta.data$Sub2,
@@ -344,19 +451,51 @@ ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DotPlot.pdf",
 
 ```{r save-rds}
 saveRDS(scrna,
-        file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.RDS"))
+        file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Customed_Annotation.RDS"))
+
 ```
 
 # Export to h5ad for scVI annotation
 
 ```{r export-h5ad}
-# Convert Seurat -> SingleCellExperiment -> h5ad
-sce <- as.SingleCellExperiment(scrna)
+# Seurat v5 stores per-sample split layers (e.g. counts.Vehicle, counts.Cisplatin-GC).
+# as.SingleCellExperiment() calls GetAssayData() internally, which errors on multiple
+# layers.  JoinLayers() collapses them back into single counts/data matrices first.
 
+scrna <- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
+DefaultAssay(scrna) <- "RNA"
+scrna <- JoinLayers(scrna)
+Layers(scrna[["RNA"]])
+# 
+# # Clean object
+# seurat_clean <- DietSeurat(
+#   scrna,
+#   assays = "RNA",
+#   counts = TRUE,
+#   data = TRUE,
+#   scale.data = FALSE,
+#   dimreducs = c("pca","umap"), # optional
+#   graphs = FALSE
+# )
+
+# # Ensure normalized data exists
+# seurat_clean <- NormalizeData(seurat_clean)
+
+
+# SaveH5Seurat(seurat_clean, filename = "Cisplatin_GC_Vehicle_Raw_Predict_Annotation_DietClean.h5Seurat", overwrite = TRUE)
+# Convert("Cisplatin_GC_Vehicle_Raw_Predict_Annotation_DietClean.h5Seurat", dest = "h5ad", overwrite = TRUE)
+
+
+# Convert Seurat -> SingleCellExperiment -> h5ad
+
+# I use the condata instead of orignal one
+# source /home/gdbecknelllab/xxw004/miniconda3/etc/profile.d/conda.sh
+# conda activate scrna_env
+sce <- as.SingleCellExperiment(scrna)
 writeH5AD(
   sce,
-  file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.h5ad")
+  file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.h5ad")
 )
-cat("h5ad written to:", paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.h5ad"), "\n")
+cat("h5ad written to:", paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.h5ad"), "\n")
 cat("Next step: run Cisplatin_GC_Vehicle_scvi_annotation.ipynb\n")
 ```

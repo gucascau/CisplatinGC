@@ -290,11 +290,13 @@ ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DotPlot.pdf",
 # Save annotated Seurat object (intermediate — before scVI)
 # =============================================================================
 saveRDS(scrna,
-        file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.RDS"))
+        file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
 
 # =============================================================================
 # Export to h5ad for scVI annotation
 # =============================================================================
+
+srcna <- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.RDS"))
 sce <- as.SingleCellExperiment(scrna)
 
 writeH5AD(
