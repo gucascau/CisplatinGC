@@ -19,7 +19,7 @@ mkdir -p /home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integ
 # ---------------------------------------------------------------------------
 # Activate the conda environment
 # ---------------------------------------------------------------------------
-source /home/gdbecknelllab/xxw004/Workspace/.conda/etc/profile.d/conda.sh
+source /home/gdbecknelllab/xxw004/Software/miniconda3/etc/profile.d/conda.sh
 conda activate cell2loc_env
 
 # ---------------------------------------------------------------------------
