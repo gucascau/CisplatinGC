@@ -69,6 +69,13 @@ head(IndividualAnnotation)
 CisplatinGCObj@meta.data %>% head()
 ```
 
+# We manually annotate the cell cluster
+```{r}
+
+```
+
+
+
 # Map verbose cell-type labels → abbreviations
 
 ```{r abbreviations}
