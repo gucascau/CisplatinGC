@@ -1,44 +1,39 @@
 ---
 title: "Cisplatin_GC_Vehicle_Annotation_Integration"
 author: "Xin Wang"
-date: "2026-04-14"
+date: "2026-04-20"
 output: html_document
 description: |
   Annotation integration for the 4-condition (Vehicle, Vehicle-GC, Cisplatin, Cisplatin-GC)
-  single-cell dataset.  Three annotation sources are merged into a weighted consensus:
-    FinalScore(cell, type) = w1 * P_scANVI + w2 * P_seurat + w3 * P_manual
+  single-cell dataset. Five annotation sources are harmonised to a shared L1 vocabulary,
+  then combined by cluster-level majority voting. UCell module scores provide independent
+  marker-gene validation for every cluster.
+
+  Five methods:
+    1. Seurat_Transfer_MKA  : predicted.id            (MKA reference)
+    2. Seurat_Transfer_Lake : predicted.id.Lake        (Lake 2025 reference)
+    3. Raw_cell_type        : manual annotation
+    4. scanvi_MKA_label     : scANVI (MKA reference)
+    5. scanvi_Lake_label    : scANVI (Lake 2025 reference)
 
   Prerequisites (run in order):
-    1. Cisplatin_GC_Vehicle_Annotation.Rmd       -> Cisplatin_GC_Vehicle_Raw_Predict_Annotation.RDS / .h5ad
-    2. Cisplatin_GC_Vehicle_scvi_annotation.ipynb -> Cisplatin_GC_Vehicle_scanvi_annotations.csv
-    3. This script                                -> Cisplatin_GC_Vehicle_Annotated_v04142026.rds
+    1. Cisplatin_GC_Vehicle_Annotation.Rmd            -> *_Combined_Predict_MKA_LakeWithL2_scanvi_*.RDS
+    2. Cisplatin_GC_Vehicle_scvi_annotation*.ipynb    -> scanvi CSV files
+    3. This script                                    -> Cisplatin_GC_Vehicle_Annotated_v04202026.rds
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
-library(sf)
 library(dplyr)
+library(tidyr)
 library(Seurat)
 library(patchwork)
-library(SeuratDisk)
-library(sctransform)
-library(ggthemes)
-library(limma)
-library(tidyverse)
-library(biomaRt)
-library(data.table)
+library(ggplot2)
 library(cowplot)
 library(ggsci)
-library(ggplot2)
-library(gridExtra)
-library(harmony)
-library(AnnotationDbi)
-library(org.Mm.eg.db)   # mouse
-library(here)
-library(patchwork)
-library(future)
-library(DoubletFinder)
+library(UCell)
+library(pheatmap)
 
 options(future.globals.maxSize = 1e15)
 ```
@@ -46,196 +41,283 @@ options(future.globals.maxSize = 1e15)
 # Set up directories
 
 ```{r dirs}
-AnnDir  <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/"
-OutDir  <- AnnDir   # write outputs to the same annotation folder
+AnnDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/"
+OutDir <- AnnDir
 setwd(OutDir)
 ```
 
 # Read inputs
 
 ```{r read-inputs}
-# 1. scANVI predictions CSV (from scvi_annotation.ipynb)
-IndividualAnnotation <- read.csv(
-  paste0(AnnDir, "Cisplatin_GC_Vehicle_scanvi_annotations.csv"),
-  row.names = 1
-)
-
-# 2. Annotated Seurat object (from Cisplatin_GC_Vehicle_Annotation.Rmd)
 CisplatinGCObj <- readRDS(
-  paste0(AnnDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.RDS")
+  paste0(AnnDir, "Cisplatin_GC_Vehicle_Combined_Predict_MKA_LakeWithL2_scanvi_LakeL2scanvi_Annotation.RDS")
 )
 
-head(IndividualAnnotation)
-CisplatinGCObj@meta.data %>% head()
+# Inspect the five method columns + confidence scores
+CisplatinGCObj@meta.data[, c(
+  "Raw_cell_type",                      "Raw_cell_type_Confidence",
+  "Seaurat_Transfer_Predicted_MKA",     "Seaurat_Transfer_Predicted_MKA.max",
+  "Seaurat_Transfer_Predicted_Lake",    "Seaurat_Transfer_Predicted_Lake.max",
+  "scanvi_MKA_label",                   "scanvi_MKA_confidence",
+  "scanvi_Lake_label",                  "scanvi_Lake_confidence"
+)] %>% head()
+
+CisplatinGCObj@meta.data$scanvi_MKA_label %>% unique()
+CisplatinGCObj@meta.data$Raw_cell_type %>% unique()
+CisplatinGCObj@meta.data$scanvi_Lake_label %>% unique()
+
+
+
+
 ```
 
-# We manually annotate the cell cluster
-```{r}
+# Harmonise all five methods to shared L1 vocabulary
 
-```
+```{r harmonise}
+# ── L1 levels used throughout ────────────────────────────────────────────────
+L1_levels <- c("PT","TAL","DCT","CNT","ATL","PC","IC","CD","POD","END","FIB","Mes","Myeloid","Lymphoid")
 
+# ── 1. Lake-style verbose labels (Seurat Transfer Lake & scANVI Lake) ─────────
+# we mainly use the Lake style 
 
-
-# Map verbose cell-type labels → abbreviations
-
-```{r abbreviations}
-unique(IndividualAnnotation$predicted.id)
-
-# Collapse DTL/ATL into LOH (same as Cisplatin_Vehicle pipeline)
-IndividualAnnotation$Raw_cell_type[
-  IndividualAnnotation$Raw_cell_type == "DTL"] <- "LOH"
-
-# Abbreviation helper applied to both Seurat transfer (predicted.id)
-# and scANVI (scanvi_label) predictions
-map_to_abbrev <- function(label_vec) {
+# ── 2. MKA abbreviated labels (Seurat Transfer MKA & scANVI MKA) ─────────────
+map_MKA_to_L1 <- function(x) {
   dplyr::case_when(
-    grepl("cortical thick ascending limb",  label_vec) ~ "TAL",
-    grepl("medullary thick ascending limb", label_vec) ~ "TAL",
-    grepl("thin descending limb",           label_vec) ~ "LOH",
-    grepl("thin ascending limb",            label_vec) ~ "LOH",
-    grepl("loop of Henle epithelial cell$", label_vec) ~ "LOH",
-    grepl("proximal tubule",                label_vec) ~ "PT",
-    grepl("distal convoluted tubule",       label_vec) ~ "DCT",
-    grepl("connecting tubule",              label_vec) ~ "CNT",
-    grepl("principal cell",                 label_vec) ~ "PC",
-    grepl("alpha-intercalated",             label_vec) ~ "IC",
-    grepl("beta-intercalated",              label_vec) ~ "IC",
-    grepl("collecting duct epithelial cell$", label_vec) ~ "CD",
-    grepl("glomerular endothelial",         label_vec) ~ "END",
-    grepl("afferent arteriole endothelial", label_vec) ~ "END",
-    grepl("efferent arteriole endothelial", label_vec) ~ "END",
-    grepl("endothelial cell$",              label_vec) ~ "END",
-    grepl("podocyte|glomerular epithelial", label_vec) ~ "POD",
-    grepl("mesangial",                      label_vec) ~ "Mes",
-    grepl("fibroblast",                     label_vec) ~ "FIB",
-    grepl("pericyte",                       label_vec) ~ "END",
-    grepl("macrophage",                     label_vec) ~ "IMM",
-    grepl("neutrophil",                     label_vec) ~ "IMM",
-    grepl("T cell",                         label_vec) ~ "IMM",
+    x %in% c("PTS1","PTS2","PTS3","PTS3T2")                                      ~ "PT",
+    x %in% c("CTAL","MTAL")                                                      ~ "TAL",
+    x %in% c("DCT","DCT-CNT")                                                    ~ "DCT",
+    x %in% c("CNT")                                                               ~ "CNT",
+    x %in% c("ATL","DTL-ATL","DTL","LOH")                                        ~ "DTL",
+    x %in% c("PC")                                                                ~ "PC",
+    x %in% c("ICA","ICB")                                                         ~ "IC",
+    x %in% c("CD-Trans")                                                          ~ "PC",
+    x %in% c("Podo","PEC")                                                        ~ "POD",
+    x %in% c("Endo","Asc-Vasa-Recta","Desc-Vasa-Recta",
+              "Vas-Efferens","Vas-Afferens","Glom-Endo","Per")                   ~ "END",
+    x %in% c("Fib")                                                               ~ "FIB",
+    x %in% c("MC")                                                                ~ "Mes",
+    x %in% c("Neutro","Macro")                                                   ~ "Myeloid",
+    x %in% c("T lymph","B lymph","NK","DC")                                      ~ "Lymphoid",
     TRUE ~ "Uncertain"
   )
 }
 
-IndividualAnnotation <- IndividualAnnotation %>%
-  mutate(
-    SeuratPredictAbb = map_to_abbrev(predicted.id),
-    ScviPredictAbb   = map_to_abbrev(scanvi_label)
-  )
-
-IndividualAnnotation %>% head()
-```
-
-# Weighted consensus annotation
-
-```{r consensus}
-# Weights: scANVI > manual > Seurat transfer
-w_seurat <- 0.2
-w_scanvi  <- 0.5
-w_raw     <- 0.3
-
-get_weighted_consensus <- function(seurat_pred, seurat_conf,
-                                   scanvi_pred, scanvi_conf,
-                                   raw_pred,    raw_conf) {
-  scores <- c(
-    setNames(seurat_conf * w_seurat, seurat_pred),
-    setNames(scanvi_conf  * w_scanvi,  scanvi_pred),
-    setNames(raw_conf     * w_raw,     raw_pred)
-  )
-  agg_scores <- tapply(scores, names(scores), sum)
-  consensus       <- names(agg_scores)[which.max(agg_scores)]
-  consensus_score <- max(agg_scores)
-  if (consensus_score < 0.2) consensus <- "Uncertain"
-  return(c(consensus, consensus_score))
+# ── 3. Raw_cell_type is already L1 — pass through with validation ─────────────
+map_raw_to_L1 <- function(x) {
+  ifelse(x %in% L1_levels, x, "Uncertain")
 }
 
-Consensus_Results <- mapply(
-  get_weighted_consensus,
-  seurat_pred = IndividualAnnotation$SeuratPredictAbb,
-  seurat_conf = IndividualAnnotation$prediction.score.max,
-  scanvi_pred = IndividualAnnotation$ScviPredictAbb,
-  scanvi_conf = IndividualAnnotation$scanvi_confidence,
-  raw_pred    = IndividualAnnotation$Raw_cell_type,
-  raw_conf    = IndividualAnnotation$Raw_cell_type_Confidence
-)
-
-IndividualAnnotation$Consensus_cell_type <- Consensus_Results[1, ]
-IndividualAnnotation$Consensus_score     <- as.numeric(Consensus_Results[2, ])
-
-IndividualAnnotation %>% head()
-```
-
-# Add annotation metadata to Seurat object
-
-```{r add-metadata}
-# Use the full cell barcode (row name from scANVI CSV) to match Seurat cell names
-FinalMeta <- IndividualAnnotation %>%
-  dplyr::select(
-    SeuratPredictAbb, prediction.score.max,
-    ScviPredictAbb, scanvi_confidence,
-    Raw_cell_type, Raw_cell_type_Confidence,
-    Consensus_cell_type, Consensus_score
-  )
-# rownames already set from read.csv(..., row.names = 1)
-
-# Add to Seurat object
-CisplatinGCObj <- AddMetaData(object = CisplatinGCObj, metadata = FinalMeta)
-
-# Factor levels for clean plotting
-cell_levels_full <- c("PT","DCT","TAL","CNT","LOH","PC","IC","CD","POD","END","FIB","Mes","IMM","Uncertain")
-cell_levels_core <- c("PT","DCT","TAL","CNT","LOH","PC","IC","CD","POD","END","IMM","Uncertain")
-
-CisplatinGCObj$Raw_cell_type      <- factor(CisplatinGCObj$Raw_cell_type,
-                                             levels = c("PT","DCT","TAL","CNT","LOH","PC","IC","END","IMM"))
-CisplatinGCObj$ScviPredictAbb     <- factor(CisplatinGCObj$ScviPredictAbb,     levels = cell_levels_full)
-CisplatinGCObj$SeuratPredictAbb   <- factor(CisplatinGCObj$SeuratPredictAbb,   levels = cell_levels_full)
-CisplatinGCObj$Consensus_cell_type<- factor(CisplatinGCObj$Consensus_cell_type,levels = cell_levels_core)
-
-levels(CisplatinGCObj$Consensus_cell_type)
-```
-
-# FinalAnnotation — apply cluster-level corrections
-
-```{r final-annotation}
-# Inspect clusters that may need overriding after reviewing the consensus DimPlot.
-# The example below mirrors the logic used for the 2-condition pipeline (Sub2 clusters 0,5,7
-# in Cisplatin condition assigned to PT).  Update cluster IDs as appropriate for this dataset.
-
+# Apply mappings
+# Note: column names use "Seaurat" (typo from Annotation.R — keep consistent)
 CisplatinGCObj@meta.data <- CisplatinGCObj@meta.data %>%
   mutate(
-    FinalAnnotation = case_when(
-      # Example override: force clusters 0, 5, 7 in Cisplatin to PT
-      Sub2 %in% c(0, 5, 7) & orig.ident == "Cisplatin" ~ "PT",
-      # Add additional overrides here as needed after inspecting UMAPs
-      TRUE ~ as.character(Consensus_cell_type)
-    )
+    L1_SeuratMKA  = map_MKA_to_L1(Seaurat_Transfer_Predicted_MKA),
+    L1_SeuratLake = Seaurat_Transfer_Predicted_Lake,  # already L1
+    L1_Raw        = map_raw_to_L1(Raw_cell_type),
+    L1_scanviMKA  = map_MKA_to_L1(scanvi_MKA_label),
+    L1_scanviLake = scanvi_Lake_label
   )
 
-CisplatinGCObj$FinalAnnotation <- factor(
-  CisplatinGCObj$FinalAnnotation,
-  levels = cell_levels_core
+# Sanity check — any unmapped labels?
+for (col in c("L1_SeuratMKA","L1_SeuratLake","L1_Raw","L1_scanviMKA","L1_scanviLake")) {
+  n_unc <- sum(CisplatinGCObj@meta.data[[col]] == "Uncertain")
+  cat(col, "→ Uncertain:", n_unc, "(", round(100*n_unc/ncol(CisplatinGCObj),1), "%)\n")
+}
+```
+
+# Per-cell method agreement
+
+```{r cell-agreement}
+method_cols <- c("L1_SeuratMKA","L1_SeuratLake","L1_Raw","L1_scanviMKA","L1_scanviLake")
+
+CisplatinGCObj@meta.data <- CisplatinGCObj@meta.data %>%
+  rowwise() %>%
+  mutate(
+    # Number of methods that agree with the plurality call
+    MethodAgreement_n = {
+      votes <- c_across(all_of(method_cols))
+      max(table(votes[votes != "Uncertain"]))
+    },
+    MethodAgreement_frac = MethodAgreement_n / length(method_cols)
+  ) %>%
+  ungroup()
+
+cat("Method agreement distribution (fraction of 5 methods):\n")
+table(CisplatinGCObj@meta.data$MethodAgreement_n)
+```
+
+# Cluster-level majority vote
+
+```{r cluster-majority}
+# For each Seurat cluster, ask: what cell type do the majority of method-votes say?
+# This is transparent, method-agnostic, and easily reported in Methods.
+
+cluster_votes <- CisplatinGCObj@meta.data %>%
+  select(Sub2, all_of(method_cols)) %>%
+  pivot_longer(all_of(method_cols), names_to = "Method", values_to = "L1") %>%
+  filter(L1 != "Uncertain") %>%
+  group_by(Sub2, L1) %>%
+  summarise(votes = n(), .groups = "drop") %>%
+  group_by(Sub2) %>%
+  mutate(
+    total_votes   = sum(votes),
+    vote_frac     = votes / total_votes
+  ) %>%
+  slice_max(votes, n = 1, with_ties = FALSE) %>%
+  rename(ClusterMajority = L1, ClusterMajority_frac = vote_frac) %>%
+  select(Sub2, ClusterMajority, ClusterMajority_frac, total_votes)
+
+# Map back to every cell
+CisplatinGCObj@meta.data <- CisplatinGCObj@meta.data %>%
+  left_join(cluster_votes, by = "Sub2")
+
+cat("Cluster majority assignments:\n")
+print(cluster_votes, n = Inf)
+
+# Save cluster vote table for Supplementary
+write.csv(cluster_votes,
+          file = paste0(OutDir, "Cluster_MajorityVote_Table.csv"),
+          row.names = FALSE)
+
+print(cluster_votes, n=Inf)
+```
+
+# UCell marker-gene scoring (independent validation)
+
+```{r ucell-scoring}
+# Mouse kidney L1 marker signatures — from published literature
+kidney_signatures <- list(
+  PT      = c("Lrp2","Slc34a1","Slc13a3","Cubn","Ass1"),
+  TAL     = c("Umod","Slc12a1","Cldn10","Egf","Kcnj1"),
+  DCT     = c("Slc12a3","Pvalb","Wnk1","Calb1"),
+  CNT     = c("Klk1","Slc8a1","Calb1","Trpv5"),
+  LOH     = c("Slc14a2","Fst","Bst1","Aqp1"),
+  PC      = c("Aqp2","Hsd11b2","Scnn1g","Avpr2"),
+  IC      = c("Atp6v1g3","Aqp6","Slc26a7","Foxi1"),
+  POD     = c("Wt1","Nphs1","Nphs2","Podxl"),
+  END     = c("Cdh5","Pecam1","Igfbp3","Flt1"),
+  FIB     = c("Col3a1","Fbn1","Col1a1","Pdgfra"),
+  Myeloid  = c("Cd14","Fcgr3","Csf1r","Lyz2","Adgre1"),
+  Lymphoid = c("Ptprc","Cd3e","Cd19","Nkg7","Gnly")
 )
 
-levels(CisplatinGCObj$FinalAnnotation)
+CisplatinGCObj <- AddModuleScore_UCell(CisplatinGCObj, features = kidney_signatures,
+                                       name = "_UCell")
+
+# For each cluster, find the cell type with the highest median UCell score
+ucell_cols <- paste0(names(kidney_signatures), "_UCell")
+
+ucell_by_cluster <- CisplatinGCObj@meta.data %>%
+  select(Sub2, all_of(ucell_cols)) %>%
+  group_by(Sub2) %>%
+  summarise(across(all_of(ucell_cols), median), .groups = "drop") %>%
+  pivot_longer(all_of(ucell_cols), names_to = "Signature", values_to = "MedianScore") %>%
+  mutate(Signature = sub("_UCell$", "", Signature)) %>%
+  group_by(Sub2) %>%
+  slice_max(MedianScore, n = 1, with_ties = FALSE) %>%
+  rename(UCell_TopType = Signature, UCell_TopScore = MedianScore)
+
+cat("UCell top cell type per cluster:\n")
+print(ucell_by_cluster, n = Inf)
+
+# Save for Supplementary
+write.csv(ucell_by_cluster,
+          file = paste0(OutDir, "Cluster_UCell_TopType_Table.csv"),
+          row.names = FALSE)
+```
+
+# Concordance: majority vote vs UCell
+
+```{r concordance}
+concordance <- cluster_votes %>%
+  left_join(ucell_by_cluster, by = "Sub2") %>%
+  mutate(
+    Concordant = ClusterMajority == UCell_TopType
+  )
+
+cat("Majority vote vs UCell concordance:\n")
+print(concordance[, c("Sub2","ClusterMajority","ClusterMajority_frac",
+                      "UCell_TopType","UCell_TopScore","Concordant")], n = Inf)
+
+cat("\nConcordant clusters:", sum(concordance$Concordant),
+    "/", nrow(concordance), "\n")
+
+write.csv(concordance,
+          file = paste0(OutDir, "Cluster_MajorityVote_UCell_Concordance.csv"),
+          row.names = FALSE)
+```
+
+# Final annotation — majority vote + manual override for discordant clusters
+
+```{r final-annotation}
+# Review the concordance table above and fill in overrides only for clusters
+# where majority vote and UCell disagree. Document the reason for every override.
+# Rule: override = UCell top type when marker evidence is unambiguous.
+
+manual_overrides <- tribble(
+  ~Sub2, ~FinalAnnotation, ~Override_reason,
+  # Example — update after reviewing concordance table and UMAPs:
+  # 12L,             "PT",            "UCell PT score 0.42; majority vote confused by low-quality cells",
+  # 17L,             "END",           "Pecam1/Cdh5 clearly expressed; MKA reference mislabelled pericytes",
+)
+
+CisplatinGCObj@meta.data <- CisplatinGCObj@meta.data %>%
+  left_join(manual_overrides %>% select(SUb2, FinalAnnotation),
+            by = "sub2") %>%
+  mutate(
+    FinalAnnotation = coalesce(FinalAnnotation, ClusterMajority)
+  )
+
+CisplatinGCObj$FinalAnnotation <- factor(CisplatinGCObj$FinalAnnotation, levels = L1_levels)
+
+cat("Final annotation distribution:\n")
+table(CisplatinGCObj$FinalAnnotation)
 ```
 
 # Save final annotated object
 
-```{r save-final}
+```{r save}
 saveRDS(CisplatinGCObj,
-        file = paste0(OutDir, "Cisplatin_GC_Vehicle_Annotated_v04142026.rds"))
-cat("Saved final annotated object.\n")
+        file = paste0(OutDir, "Cisplatin_GC_Vehicle_Final_Annotated_v04202026.rds"))
+
+# Save per-cell annotation summary for Methods/Supplementary
+write.csv(
+  CisplatinGCObj@meta.data[, c(
+    "Raw_cell_type",
+    "Seaurat_Transfer_Predicted_MKA", "Seaurat_Transfer_Predicted_Lake",
+    "scanvi_MKA_label", "scanvi_Lake_label",
+    "L1_Raw","L1_SeuratMKA","L1_SeuratLake","L1_scanviMKA","L1_scanviLake",
+    "MethodAgreement_n","MethodAgreement_frac",
+    "ClusterMajority","ClusterMajority_frac","FinalAnnotation"
+  )],
+  file = paste0(OutDir, "PerCell_Annotation_Summary.csv")
+)
+cat("Saved.\n")
 ```
 
 # Visualisation — all annotation layers
 
-```{r visualise-all}
-GroupAnnTypes <- c("Raw_cell_type","ScviPredictAbb","SeuratPredictAbb",
-                   "Consensus_cell_type","FinalAnnotation")
+```{r visualise-dimplot}
+GroupAnnTypes <- c("L1_Raw","L1_SeuratMKA","L1_SeuratLake",
+                   "L1_scanviMKA","L1_scanviLake",
+                   "ClusterMajority","FinalAnnotation")
 
+for (ann_col in GroupAnnTypes) {
+  CisplatinGCObj@meta.data[[ann_col]] <- factor(
+    CisplatinGCObj@meta.data[[ann_col]], levels = L1_levels
+  )
+  p <- DimPlot(CisplatinGCObj, group.by = ann_col,
+               split.by = "DataSet", label = TRUE, ncol = 2) +
+       ggtitle(ann_col)
+  ggsave(paste0(ann_col, "_DimPlot.pdf"), plot = p, height = 8, width = 12)
+}
+```
+
+```{r visualise-dotplot}
 Finalcelltypemarkers <- c(
   "Lrp2","Slc34a1","Slc13a3",        # PT
-  "Slc12a3","Pvalb","Wnk1",          # DCT
   "Umod","Slc12a1","Cldn10",         # TAL
+  "Slc12a3","Pvalb","Wnk1",          # DCT
   "Klk1","Slc8a1","Calb1",           # CNT
   "Slc14a2","Fst","Bst1",            # LOH
   "Aqp2","Hsd11b2","Scnn1g",         # PC
@@ -246,91 +328,72 @@ Finalcelltypemarkers <- c(
   "Ptprc","Cd3e","Cd19","Cd14"       # IMM
 )
 
-for (ann_col in GroupAnnTypes) {
-  # DimPlot split by DataSet (4 panels)
-  p_dim <- DimPlot(CisplatinGCObj, group.by = ann_col,
-                   split.by = "DataSet", label = TRUE, ncol = 2)
-  ggsave(paste0(ann_col, "_GC_Annotation_DimPlot.pdf"),
-         plot = p_dim, height = 8, width = 12)
-
-  # DotPlot
-  Idents(CisplatinGCObj) <- ann_col
-  p_dot <- DotPlot(CisplatinGCObj, features = Finalcelltypemarkers) + RotatedAxis()
-  ggsave(paste0(ann_col, "_Cisplatin_GC_Vehicle_DotPlot.pdf"),
-         plot = p_dot, height = 5, width = 14)
-
-  # Cell-count bar plot per condition
-  df_counts <- CisplatinGCObj@meta.data %>%
-    group_by(!!sym(ann_col), DataSet) %>%
-    summarise(Count = n(), .groups = "drop")
-
-  p_bar <- ggplot(df_counts, aes(x = DataSet, y = Count, fill = !!sym(ann_col))) +
-    geom_bar(stat = "identity", position = "stack") +
-    theme_minimal() +
-    labs(title = paste("Cell Type Counts —", ann_col),
-         x = "Dataset", y = "Cell Count", fill = "Cell Type") +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-    scale_fill_brewer(palette = "Set3")
-  ggsave(paste0(ann_col, "_Cisplatin_GC_Vehicle_FreqBar.pdf"),
-         plot = p_bar, height = 5, width = 5)
-}
+Idents(CisplatinGCObj) <- "FinalAnnotation"
+p_dot <- DotPlot(CisplatinGCObj, features = Finalcelltypemarkers) + RotatedAxis()
+ggsave("FinalAnnotation_DotPlot.pdf", plot = p_dot, height = 5, width = 16)
 ```
 
-# Additional feature plots
+```{r visualise-method-agreement}
+# Feature plot showing how many methods agree per cell — flag low-confidence cells
+p_agree <- FeaturePlot(CisplatinGCObj, features = "MethodAgreement_frac",
+                       split.by = "DataSet", label = TRUE, ncol = 2) +
+           ggtitle("Fraction of 5 methods agreeing on cell type")
+ggsave("MethodAgreement_FeaturePlot.pdf", plot = p_agree, height = 8, width = 14)
 
-```{r feature-plots}
-FeaturePlot(CisplatinGCObj, features = "Egf",        split.by = "DataSet", label = TRUE, ncol = 2)
-FeaturePlot(CisplatinGCObj, features = "percent.mt", split.by = "DataSet", label = TRUE, ncol = 2)
+# Bar chart: method agreement per final cell type
+df_agree <- CisplatinGCObj@meta.data %>%
+  group_by(FinalAnnotation) %>%
+  summarise(Mean_Agreement = mean(MethodAgreement_frac), .groups = "drop")
 
-p_conf <- FeaturePlot(CisplatinGCObj, features = "Consensus_score",
-                      split.by = "DataSet", label = TRUE, ncol = 2)
-ggsave("Consensus_score_FeaturePlot_GC.pdf", plot = p_conf, height = 8, width = 14)
+p_bar_agree <- ggplot(df_agree, aes(x = FinalAnnotation, y = Mean_Agreement,
+                                     fill = FinalAnnotation)) +
+  geom_col() +
+  geom_hline(yintercept = 0.6, linetype = "dashed", colour = "grey40") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_fill_d3() +
+  theme_minimal() +
+  labs(title = "Mean method agreement per cell type",
+       x = NULL, y = "Mean fraction (5 methods)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+ggsave("FinalAnnotation_MethodAgreement_Bar.pdf", plot = p_bar_agree, height = 4, width = 6)
+```
 
-# Final annotation cell counts
-df_final <- CisplatinGCObj@meta.data %>%
+```{r visualise-counts}
+df_counts <- CisplatinGCObj@meta.data %>%
   group_by(FinalAnnotation, DataSet) %>%
   summarise(Count = n(), .groups = "drop")
 
-p_final_bar <- ggplot(df_final, aes(x = DataSet, y = Count, fill = FinalAnnotation)) +
+p_counts <- ggplot(df_counts, aes(x = DataSet, y = Count, fill = FinalAnnotation)) +
   geom_bar(stat = "identity", position = "stack") +
+  scale_fill_d3() +
   theme_minimal() +
-  labs(title = "Final Cell Type Counts — 4 Conditions",
-       x = "Dataset", y = "Cell Count", fill = "Cell Type") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  scale_fill_brewer(palette = "Set3")
-ggsave("FinalAnnotation_Cisplatin_GC_Vehicle_FreqBar.pdf",
-       plot = p_final_bar, height = 5, width = 5)
+  labs(title = "Cell type counts — 4 conditions",
+       x = "Dataset", y = "Cell count", fill = "Cell type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("FinalAnnotation_CellCounts_Bar.pdf", plot = p_counts, height = 5, width = 6)
 ```
 
-# Confidence report
+```{r ucell-heatmap}
+# UCell score heatmap — shows marker evidence for every cluster
+ucell_matrix <- CisplatinGCObj@meta.data %>%
+  select(seurat_clusters, all_of(ucell_cols)) %>%
+  group_by(seurat_clusters) %>%
+  summarise(across(all_of(ucell_cols), median), .groups = "drop") %>%
+  tibble::column_to_rownames("seurat_clusters") %>%
+  as.matrix()
 
-```{r confidence-report}
-FinalMeta <- FinalMeta %>%
-  mutate(Consensus_Confidence = case_when(
-    Consensus_score >= 0.9 ~ "High",
-    Consensus_score >= 0.4 ~ "Medium",
-    TRUE                   ~ "Low"
-  ))
+colnames(ucell_matrix) <- sub("_UCell$", "", colnames(ucell_matrix))
 
-FinalMeta$Consensus_Confidence <- factor(
-  FinalMeta$Consensus_Confidence, levels = c("High","Medium","Low")
+pheatmap::pheatmap(
+  ucell_matrix,
+  scale = "column",
+  cluster_rows = TRUE, cluster_cols = FALSE,
+  filename = paste0(OutDir, "Cluster_UCell_Heatmap.pdf"),
+  height = 8, width = 6,
+  main = "UCell scores per cluster (scaled)"
 )
-
-table(FinalMeta$Consensus_Confidence)
-prop.table(table(FinalMeta$Consensus_Confidence))
-
-p_conf_bar <- ggplot(FinalMeta, aes(x = Consensus_Confidence, fill = Consensus_Confidence)) +
-  geom_bar() +
-  scale_fill_manual(values = c("High" = "#4CAF50", "Medium" = "#FFB74D", "Low" = "#E57373")) +
-  theme_minimal() +
-  labs(title = "Cell Annotation Confidence — 4-condition GC dataset",
-       x = "Confidence Level", y = "Number of Cells")
-ggsave("Consensus_Confidence_Barplot_GC.pdf", plot = p_conf_bar, height = 4, width = 5)
 ```
 
-# Gene-of-interest feature / violin plots
-
-```{r goi-plots}
-VlnPlot(CisplatinGCObj, features = "Egf",    split.by = "DataSet", group.by = "FinalAnnotation")
-VlnPlot(CisplatinGCObj, features = "Havcr1", split.by = "DataSet", group.by = "FinalAnnotation")
+```{r session}
+sessionInfo()
 ```

@@ -156,8 +156,21 @@ predictions_mka <- TransferData(
   refdata   = reference_mka$author_cell_type,
   dims      = 1:30
 )
+
+colnames(predictions_mka) <- sub("^predicted.id$",          "Seaurat_Transfer_Predicted_MKA",         colnames(predictions_mka))
+colnames(predictions_mka) <- sub("^prediction\\.score\\.max$", "Seaurat_Transfer_Predicted_MKA.max", colnames(predictions_mka))
+colnames(predictions_mka) <- sub("^prediction\\.score\\.(.+)$","Seaurat_Transfer_Predicted_MKA.\\1", colnames(predictions_mka))
+
 scrna <- AddMetaData(scrna, metadata = predictions_mka)
 scrna@meta.data %>% head()
+unique(scrna@meta.data$Seaurat_Transfer_Predicted_MKA)
+
+
+scrna@meta.data$Seaurat_Transfer_Predicted_MKA <- ordered(
+  factor(scrna@meta.data$Seaurat_Transfer_Predicted_MKA),
+  levels = MKA_Order
+)
+
 
 # =============================================================================
 # Step 1b: Seurat label transfer — Lake snRNA reference
@@ -199,25 +212,25 @@ predictions_lake <- TransferData(
   dims      = 1:30
 )
 
-colnames(predictions_lake) <- sub("^predicted\\.id$",          "predicted.id.Lake",         colnames(predictions_lake))
-colnames(predictions_lake) <- sub("^prediction\\.score\\.max$", "prediction.score.max.Lake", colnames(predictions_lake))
-colnames(predictions_lake) <- sub("^prediction\\.score\\.(.+)$","prediction.score.Lake.\\1", colnames(predictions_lake))
+colnames(predictions_lake) <- sub("^predicted\\.id$",          "Seaurat_Transfer_Predicted_Lake",         colnames(predictions_lake))
+colnames(predictions_lake) <- sub("^prediction\\.score\\.max$", "Seaurat_Transfer_Predicted_Lake.max", colnames(predictions_lake))
+colnames(predictions_lake) <- sub("^prediction\\.score\\.(.+)$","Seaurat_Transfer_Predicted_Lake.\\1", colnames(predictions_lake))
 
 scrna <- AddMetaData(scrna, metadata = predictions_lake)
 scrna@meta.data %>% head()
 
-scrna@meta.data$predictions_lake <- ordered(
-  factor(scrna@meta.data$predictions_lake),
+scrna@meta.data$Seaurat_Transfer_Predicted_Lake <- ordered(
+  factor(scrna@meta.data$Seaurat_Transfer_Predicted_Lake),
   levels = LakeL1Cell_Order
 )
 # =============================================================================
 # Step 1c: Compare MKA vs Lake transfer predictions
 # =============================================================================
-table(MKA  = scrna$predicted.id,
-      Lake = scrna$predicted.id.Lake) %>% head(10)
+table(MKA  = scrna$Seaurat_Transfer_Predicted_Lake,
+      Lake = scrna$Seaurat_Transfer_Predicted_MKA) %>% head(10)
 
-p_mka  <- DimPlot(scrna, group.by = "predicted.id",      label = TRUE, repel = TRUE) + ggtitle("MKA transfer")
-p_lake <- DimPlot(scrna, group.by = "predicted.id.Lake", label = TRUE, repel = TRUE) + ggtitle("Lake transfer")
+p_mka  <- DimPlot(scrna, group.by = "Seaurat_Transfer_Predicted_MKA",      label = TRUE, repel = TRUE) + ggtitle("MKA transfer")
+p_lake <- DimPlot(scrna, group.by = "Seaurat_Transfer_Predicted_Lake", label = TRUE, repel = TRUE) + ggtitle("Lake transfer")
 ggsave("Reference_Comparison_DimPlot.pdf", plot = p_mka + p_lake, height = 5, width = 25)
 
 saveRDS(scrna,
@@ -227,26 +240,30 @@ saveRDS(scrna,
 # read the RDS
 scrna <- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
 
+
 # =============================================================================
 # Step 2: Subclustering for manual annotation
 # =============================================================================
 
 scrna <- FindClusters(scrna,  resolution = 0.8,algorithm = 1)
 
-Idents(scrna) <- "seurat_clusters"
+scrna <- FindClusters(scrna,  resolution = 2,algorithm = 1)
 
-scrna <- FindSubCluster(scrna, cluster = c("5"), graph.name = "RNA_snn",
-                        subcluster.name = "Sub1", resolution = 0.4)
-Idents(scrna) <- "Sub1"
+Idents(scrna) <- "seurat_clusters"
+DimPlot(scrna, group.by = "seurat_clusters", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("Manual annotation")
+
+#scrna <- FindSubCluster(scrna, cluster = c("5"), graph.name = "RNA_snn",
+                        subcluster.name = "Sub1", resolution = 0.2)
+#Idents(scrna) <- "Sub1"
 
 scrna <- FindSubCluster(scrna, cluster = c("7"), graph.name = "RNA_snn",
                         subcluster.name = "Sub2", resolution = 0.6)
 Idents(scrna) <- "Sub2"
-DimPlot(scrna, split.by = "DataSet", label = TRUE, ncol = 2)
+# DimPlot(scrna, split.by = "DataSet", label = TRUE, ncol = 2)
 ggsave("Subclustering_DimPlot.pdf",
        plot = DimPlot(scrna, split.by = "DataSet", label = TRUE, ncol = 2),
        height = 5, width = 14)
-DimPlot(scrna, group.by = "predicted.id.Lake", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("Lake transfer")
+DimPlot(scrna, group.by = "Sub2", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("Manual annotation")
 # =============================================================================
 # Step 3: Manual cell-type assignment
 # =============================================================================
@@ -276,15 +293,17 @@ DotPlot(scrna, features = Finalcelltypemarkers) + RotatedAxis()
 FinalCluster <- as.character(levels(factor(scrna$Sub2)))
 CellType <- data.frame(cluster = FinalCluster, cell = FinalCluster)
 
-CellType[CellType$cluster %in% c("6_0","6_1"), 2] <- "TAL"
-CellType[CellType$cluster %in% c("6_2"),        2] <- "DCT"
-CellType[CellType$cluster %in% c("11"),         2] <- "LOH"
-CellType[CellType$cluster %in% c("0","5","7","8","1","2","4","14"), 2] <- "PT"
+CellType[CellType$cluster %in% c("7_0","7_2","7_3"), 2] <- "DCT"
+CellType[CellType$cluster %in% c("7_1"),        2] <- "CNT"
+CellType[CellType$cluster %in% c("4"),         2] <- "TAL"
+CellType[CellType$cluster %in% c("0","1","2","3","6","10","17"), 2] <- "PT"
 CellType[CellType$cluster %in% c("12"),         2] <- "IC"
-CellType[CellType$cluster %in% c("3_0","3_1"),  2] <- "PC"
-CellType[CellType$cluster %in% c("3_2"),        2] <- "CNT"
-CellType[CellType$cluster %in% c("15","9","10"),2] <- "END"
-CellType[CellType$cluster %in% c("13"),         2] <- "IMM"
+CellType[CellType$cluster %in% c("5"),  2] <- "PC"
+CellType[CellType$cluster %in% c("9"),        2] <- "Myeloid"
+CellType[CellType$cluster %in% c("8","13","16"),2] <- "END"
+CellType[CellType$cluster %in% c("15"),         2] <- "FIB"
+CellType[CellType$cluster %in% c("11"),         2] <- "Lymphoid"
+CellType[CellType$cluster %in% c("14"),         2] <- "DTL"
 
 scrna@meta.data$Raw_cell_type <- sapply(
   scrna@meta.data$Sub2,
@@ -308,26 +327,14 @@ ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DotPlot.pdf",
 saveRDS(scrna,
         file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
 
-# =============================================================================
-# Export to h5ad for scVI annotation
-# =============================================================================
-
-#srcna <- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
-sce <- as.SingleCellExperiment(scrna)
-
-writeH5AD(
-  sce,
-  file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.h5ad")
-)
-cat("h5ad written to:", paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.h5ad"), "\n")
-cat("Next step: run Cisplatin_GC_Vehicle_scvi_annotation.ipynb\n")
-
 
 # =============================================================================
 # Export to annotation from scVI annotation
 # =============================================================================
 AnnotationDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/"
 
+
+# =============================================================================
 scrna <- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
 # 1. Export to annotation from scVI annotation
 # read the scANVI annotation CSV, this trained with the MKA reference and Lake together:
@@ -363,9 +370,14 @@ scrna@meta.data$scanvi_Lake_label <- ordered(
 )
 
 
-DimPlot(scrna, group.by = "scanvi_MKA_label", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("scanvi_MKA transfer")
+# DimPlot(scrna, group.by = "scanvi_MKA_label", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("scanvi_MKA transfer")
 
-DimPlot(scrna, group.by = "scanvi_Lake_label", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("scanvi_Lake transfer")
+# DimPlot(scrna, group.by = "scanvi_Lake_label", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("scanvi_Lake transfer")
+# =============================================================================
+
+# =============================================================================
+# Export to annotation from scVI annotation, we finally used the individual annoation by two datasets, not the combined one, because the combined one has some weird annotation that does not match with the MKA and Lake annotations, and we are not sure if it is a bug in the scVI annotation or if it is a real biological difference. So we will use the individual annotations for MKA and Lake separately to compare with our Seurat label transfer and manual annotation, and to see if there are any discrepancies or additional insights from the scVI annotations. We will also compare the scVI annotations with the MKA and Lake predictions to see if they are consistent or if there are any differences that we need to investigate further.
+# =============================================================================
 
 # 2 . Export to annotation from scVI annotation
 # read the scANVI annotation CSV, this trained only with Lake reference:
@@ -475,27 +487,32 @@ predictions_lake <- TransferData(
 predictions_lake_2 <- predictions_lake
 
 colnames(predictions_lake)
-colnames(predictions_lake_2) <- sub("^predicted.id$",          "predicted.id.LakeL2",         colnames(predictions_lake))
-colnames(predictions_lake_2) <- sub("^prediction\\.score\\.max$", "prediction.score.max.LakeidL2", colnames(predictions_lake))
-colnames(predictions_lake_2) <- sub("^prediction\\.score\\.(.+)$","prediction.score.LakeL2.\\1", colnames(predictions_lake))
+colnames(predictions_lake_2) <- sub("^predicted.id$",          "Seaurat_Transfer_Predicted_LakeL2",         colnames(predictions_lake_2))
+colnames(predictions_lake_2) <- sub("^prediction\\.score\\.max$", "Seaurat_Transfer_Predicted_LakeL2.max", colnames(predictions_lake_2))
+colnames(predictions_lake_2) <- sub("^prediction\\.score\\.(.+)$","Seaurat_Transfer_Predicted_LakeL2.\\1", colnames(predictions_lake_2))
 colnames(predictions_lake_2)
 scrna <- AddMetaData(scrna, metadata = predictions_lake_2)
 scrna@meta.data %>% head()
+LakeL2Cell_Order <- c("PT-S1",  "PT-S1/2" , "PT-S2", "PT-S3","aPT" ,"dPT" ,  "cycPT", "PapE", "DTL1", "DTL2", "DTL3","aDTL", "DCT","aDCT",  "dDCT",  "dCNT", "ATL", "aTAL","C-TAL" ,"C/M-TAL", "dC-TAL",  "M-TAL", "frTAL" , "dM-TAL", "infTAL", "M-PC" , "dPC" , "C-IC-A" , "IC-B", "M-IC-A" , "EC-AA", "EC-AVR", "EC-DVR", "EC-GC","cycEC","infEC-PTC" ,"dEC-PTC"  ,"dEC-AVR" , "FIB", "dM-FIB", "infFIB", "eaFIB" , "M-FIB",  "VSMC/P", "IMCD","MC", "MON" , "moMAC", "moMAC-INF", "DC","T" ,  "B"  )
+
+# change the order of scanvi_Lake_label
+scrna@meta.data$Seaurat_Transfer_Predicted_LakeL2 <- ordered(
+  factor(scrna@meta.data$Seaurat_Transfer_Predicted_LakeL2),
+  levels = LakeL2Cell_Order
+)
 
 
 # =============================================================================
 # Step 1c: Compare MKA vs Lake vs Lake L2 transfer predictions
 # =============================================================================
-table(MKA  = scrna$predicted.id,
-      LakeL1 = scrna$predicted.id.Lake,
-      LakeL2 = scrna$predicted.id.LakeL2) %>% head(10)
+table(MKA  = scrna$Seaurat_Transfer_Predicted_MKA,
+      LakeL1 = scrna$Seaurat_Transfer_Predicted_Lake,
+      LakeL2 = scrna$Seaurat_Transfer_Predicted_LakeL2) %>% head(10)
 
 
-
-
-p_mka  <- DimPlot(scrna, group.by = "predicted.id",      label = TRUE, repel = TRUE) + ggtitle("MKA transfer") + scale_color_hue()
-p_lake  <- DimPlot(scrna, group.by = "predicted.id.Lake", label = TRUE, repel = TRUE) + ggtitle("Lake transfer") + scale_color_hue()
-p_lakeL2 <- DimPlot(scrna, group.by = "predicted.id.LakeL2", label = TRUE, repel = TRUE) + ggtitle("Lake transfer") + scale_color_hue()
+p_mka  <- DimPlot(scrna, group.by = "Seaurat_Transfer_Predicted_MKA",      label = TRUE, repel = TRUE) + ggtitle("MKA transfer") + scale_color_hue()
+p_lake  <- DimPlot(scrna, group.by = "Seaurat_Transfer_Predicted_Lake", label = TRUE, repel = TRUE) + ggtitle("Lake transfer") + scale_color_hue()
+p_lakeL2 <- DimPlot(scrna, group.by = "Seaurat_Transfer_Predicted_LakeL2", label = TRUE, repel = TRUE) + ggtitle("Lake L2 transfer") + scale_color_hue()
 ggsave("Reference_Comparison_LabelTransfer_DimPlot.pdf", plot = p_mka + p_lake + p_lakeL2, height = 5, width = 30)
 
 saveRDS(scrna,
@@ -504,5 +521,70 @@ saveRDS(scrna,
 
 # Method 3: Use the scVI annotations to further refine the cell type labels, especially for ambiguous clusters. Compare the scVI predictions with the MKA and Lake predictions, and use the scVI annotations to resolve any discrepancies or to provide additional granularity in cell type classification.
 # we need to run Cisplatin_GC_Vehicle_scvi_annotation_LakeOnly_ComprehensiveAnnotation.py first to get the scVI annotations, then we can add them to the Seurat object and compare with the MKA and Lake predictions to refine our cell type labels. This will help us to identify any ambiguous clusters and assign more accurate cell type labels based on the combined evidence from all three annotation methods.
+
+#scrna<- readRDS ("Cisplatin_GC_Vehicle_Combined_Predict_MKA_LakeWithL2_scanvi_Annotation.RDS")
+
+
+# Method 3 . Export to annotation from scVI annotation
+# read the scANVI annotation CSV, this trained only with Lake reference:
+scanvi_annotation_lakeL2<- read.csv(paste0(AnnotationDir, "Cisplatin_GC_Vehicle_scanvi_LakeL2_annotations.csv"))
+# add the CellID from X and remove "-query" string
+scanvi_annotation_lakeL2 <- scanvi_annotation_lakeL2 %>%
+  mutate(CellID = str_replace(X, "-query", ""))
+scanvi_annotation_lakeL2 %>% head()
+# add the row name as the CellID and remove the X column
+rownames(scanvi_annotation_lakeL2) <- scanvi_annotation_lakeL2$CellID
+scanvi_annotation_lakeL2 <- scanvi_annotation_lakeL2 %>%
+  dplyr::select(-X)
+
+head(scanvi_annotation_lakeL2)
+
+# add the metadata to the Seurat object
+scrna <- AddMetaData(scrna,   metadata = scanvi_annotation_lakeL2)
+# check the new metadata columns
+levels( factor(scrna@meta.data$scanvi_LakeL2_label))
+# add the order of the LakeL2Cell_Order
+LakeL2Cell_Order <- c("PT-S1",  "PT-S1/2" , "PT-S2", "PT-S3","aPT" ,"dPT" ,  "cycPT", "PapE", "DTL1", "DTL2", "DTL3","aDTL", "DCT","aDCT",  "dDCT",  "dCNT", "ATL", "aTAL","C-TAL" ,"C/M-TAL", "dC-TAL",  "M-TAL", "frTAL" , "dM-TAL", "infTAL", "M-PC" , "dPC" , "C-IC-A" , "IC-B", "M-IC-A" , "EC-AA", "EC-AVR", "EC-DVR", "EC-GC","cycEC","infEC-PTC" ,"dEC-PTC"  ,"dEC-AVR" , "FIB", "dM-FIB", "infFIB", "eaFIB" , "M-FIB",  "VSMC/P", "IMCD","MC", "MON" , "moMAC", "moMAC-INF", "DC","T" ,  "B"  )
+length(LakeL2Cell_Order)
+
+
+scrna@meta.data %>% tail()
+# change the order of scanvi_Lake_label
+scrna@meta.data$scanvi_LakeL2_label <- ordered(
+  factor(scrna@meta.data$scanvi_LakeL2_label),
+  levels = LakeL2Cell_Order
+)
+
+CisplatinLakeAnnotationL2Dimplot<- DimPlot(scrna, group.by = "scanvi_LakeL2_label", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("scanvi_Lake transfer") + scale_color_hue()
+ggsave("Cisplatin_GC_Vehicle_scanvi_Lake_Annotation_scanvi_LakeL2_label_DimPlot.pdf",
+       plot = CisplatinLakeAnnotationL2Dimplot, height = 5, width = 14)
+
+
+saveRDS(scrna,
+        file = paste0(OutDir, "Cisplatin_GC_Vehicle_Combined_Predict_MKA_LakeWithL2_scanvi_LakeL2scanvi_Annotation.RDS"))
+# scrna <- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Combined_Predict_MKA_LakeWithL2_scanvi_LakeL2scanvi_Annotation.RDS"))
+
+#DimPlot(scrna, group.by = "scanvi_LakeL2_label", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("scanvi_Lake transfer") + scale_color_hue()
+
+# 
+scrna@meta.data$Raw_cell_type %>% table()
+scrna@meta.data %>% tail()
+
+
+
+# =============================================================================
+# Export to h5ad for scVI annotation
+# =============================================================================
+
+#srcna <- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.RDS"))
+sce <- as.SingleCellExperiment(scrna)
+
+writeH5AD(
+  sce,
+  file = paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.h5ad")
+)
+cat("h5ad written to:", paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_Annotation.h5ad"), "\n")
+cat("Next step: run Cisplatin_GC_Vehicle_scvi_annotation.ipynb\n")
+
 
 

@@ -10,6 +10,9 @@ description: |
     2. Manual annotation guided by canonical kidney cell-type markers
     3. scVI/scANVI (run separately in Cisplatin_GC_Vehicle_scvi_annotation.ipynb)
   The annotated Seurat object and an h5ad file are saved for downstream use.
+
+
+ # please use the Cisplatin_GC_Vehicle_Annotation.R as our final version 
 ---
 
 ```{r setup, include=FALSE}
@@ -261,6 +264,16 @@ saveRDS(scrna,
 ```
 
 
+## 1d. I used the Lake Levels 2 to comprehensively annotate the object
+
+```{r}
+# I used the Lake Levels 2 to comprehensively annotate the object, and the annotation is more consistent with the marker expression. The MKA annotation is more coarse and has some mis-annotation (e.g. some PT_S3 cells are annotated as DCT by MKA). So I only keep the Lake annotation for the downstream analysis.
+
+
+```
+
+
+
 # The above label transfer was run using the sbatch script `Cisplatin_GC_Vehicle_Seurat_Annotation_sbatch.sh` on the cluster, which has more memory allocated for Seurat's FindTransferAnchors step.  The resulting annotated Seurat object is read back in below for the next steps of manual annotation and scVI export.
 
 # Step 2: Subclustering for manual annotation
@@ -499,3 +512,5 @@ writeH5AD(
 cat("h5ad written to:", paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annotation.h5ad"), "\n")
 cat("Next step: run Cisplatin_GC_Vehicle_scvi_annotation.ipynb\n")
 ```
+
+
