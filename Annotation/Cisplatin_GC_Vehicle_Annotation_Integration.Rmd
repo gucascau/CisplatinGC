@@ -67,9 +67,51 @@ CisplatinGCObj@meta.data$Raw_cell_type %>% unique()
 CisplatinGCObj@meta.data$scanvi_Lake_label %>% unique()
 
 
+```
+
+
+# we reclustered these samples using the same parameters as the main paper, but with all 3 conditions together. So the cluster labels are different from the original annotation script — we need to re-derive the cluster-level majority vote and UCell validation based on the new clusters.
+
+```{r}
+CisplatinGCObj <- subset(CisplatinGCObj, subset = DataSet %in% c("Vehicle","Cisplatin","Cisplatin-GC"))
+# Note: we keep Vehicle-GC in the object for annotation purposes, but exclude from downstream analysis to avoid confounding by GC effects.
+
+# we recluster these samples together, so we need to re-derive the cluster-level majority vote and UCell validation based on the new clusters. The per-cell annotations from the five methods are still valid, but the cluster labels have changed.
+
+CisplatinGCObj <- CisplatinGCObj %>%
+    NormalizeData() %>%
+    FindVariableFeatures(selection.method = "vst") %>%
+    ScaleData()
+
+CisplatinGCObj <- RunPCA(CisplatinGCObj, verbose = TRUE,  npcs = 30)
+CisplatinGCObj <- RunUMAP(CisplatinGCObj, dims = 1:30)
+CisplatinGCObj <- FindNeighbors(CisplatinGCObj, dims = 1:30)
+CisplatinGCObj <- FindClusters(CisplatinGCObj,  resolution = 1,algorithm = 1)
+
+# ElbowPlot(rnaAggr, ndims = 50) # to determine number of dimensions for clustering
+#CisplatinGCObj <- RunHarmony(CisplatinGCObj, group.by.vars = c("DataSet"), reduction.save = "harmony")
+# CisplatinGCObj <- RunUMAP(CisplatinGCObj, dims = 1:30, reduction = "harmony")
+# CisplatinGCObj <- FindNeighbors(CisplatinGCObj, dims = 1:30,  reduction = "harmony")
+# CisplatinGCObj <- FindClusters(CisplatinGCObj,  resolution = 1,algorithm = 1)
+
+# saveRDS
+saveRDS(CisplatinGCObj,
+        file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_Annotation.RDS"))
+
+DimPlot(CisplatinGCObj,  split.by = "DataSet", label = TRUE, ncol = 3) +
+  ggtitle("Reclustering of Vehicle + Cisplatin samples") +
+  theme(legend.position = "none")
+
+
+DimPlot(CisplatinGCObj, group.by = "Seaurat_Transfer_Predicted_Lake",split.by = "DataSet", label = TRUE, ncol = 3) +
+  ggtitle("Reclustering of Vehicle + Cisplatin samples") +
+  theme(legend.position = "none")
 
 
 ```
+
+
+
 
 # Harmonise all five methods to shared L1 vocabulary
 
