@@ -247,7 +247,7 @@ scrna <- readRDS(paste0(OutDir, "Cisplatin_GC_Vehicle_Raw_Predict_MKA_Lake_Annot
 
 scrna <- FindClusters(scrna,  resolution = 0.8,algorithm = 1)
 
-scrna <- FindClusters(scrna,  resolution = 2,algorithm = 1)
+#scrna <- FindClusters(scrna,  resolution = 2,algorithm = 1)
 
 Idents(scrna) <- "seurat_clusters"
 DimPlot(scrna, group.by = "seurat_clusters", split.by = "DataSet",label = TRUE, repel = TRUE) + ggtitle("Manual annotation")
@@ -303,7 +303,6 @@ CellType[CellType$cluster %in% c("9"),        2] <- "Myeloid"
 CellType[CellType$cluster %in% c("8","13","16"),2] <- "END"
 CellType[CellType$cluster %in% c("15"),         2] <- "FIB"
 CellType[CellType$cluster %in% c("11"),         2] <- "Lymphoid"
-CellType[CellType$cluster %in% c("14"),         2] <- "DTL"
 
 scrna@meta.data$Raw_cell_type <- sapply(
   scrna@meta.data$Sub2,
@@ -317,10 +316,23 @@ ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DimPlot.pdf",
        plot = DimPlot(scrna, split.by = "DataSet", label = TRUE, ncol = 2),
        height = 5, width = 14)
 
+
+
 ManualDotPlot <- DotPlot(scrna, features = Finalcelltypemarkers) + RotatedAxis()
-ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DotPlot.pdf",
+ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DotPlots.pdf",
        plot = ManualDotPlot, height = 5, width = 14)
 
+
+scrna <- FindClusters(scrna,  resolution = 2,algorithm = 1)
+
+Idents(scrna) <- "seurat_clusters"
+
+ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DimPlot_26clusters.pdf",
+       plot = DimPlot(scrna, split.by = "DataSet", label = TRUE, ncol = 2),
+       height = 9, width = 14)
+ManualDotPlot <- DotPlot(scrna, features = Finalcelltypemarkers) + RotatedAxis()
+ggsave("Cisplatin_GC_Vehicle_ManualAnnotation_DotPlot_26clusters.pdf",
+       plot = ManualDotPlot, height = 10, width = 14)
 # =============================================================================
 # Save annotated Seurat object (intermediate — before scVI)
 # =============================================================================
