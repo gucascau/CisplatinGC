@@ -34,6 +34,7 @@ library(cowplot)
 library(ggsci)
 library(UCell)
 library(pheatmap)
+library(harmony)
 
 options(future.globals.maxSize = 1e15)
 ```
@@ -42,19 +43,21 @@ options(future.globals.maxSize = 1e15)
 
 ```{r dirs}
 AnnDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/"
-OutDir <- AnnDir
+
+OutDir <- c("/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/IntegrateL1/")
+
 setwd(OutDir)
 ```
 
 # Read inputs
 
 ```{r read-inputs}
-CisplatinGCObj <- readRDS(
+CisplatinGCObj0 <- readRDS(
   paste0(AnnDir, "Cisplatin_GC_Vehicle_Combined_Predict_MKA_LakeWithL2_scanvi_LakeL2scanvi_Annotation.RDS")
 )
 
-# Inspect the five method columns + confidence scores
-CisplatinGCObj@meta.data[, c(
+# Inspect the five method columns + confidence scores for the L1 annotations
+CisplatinGCObj0@meta.data[, c(
   "Raw_cell_type",                      "Raw_cell_type_Confidence",
   "Seaurat_Transfer_Predicted_MKA",     "Seaurat_Transfer_Predicted_MKA.max",
   "Seaurat_Transfer_Predicted_Lake",    "Seaurat_Transfer_Predicted_Lake.max",
@@ -62,56 +65,172 @@ CisplatinGCObj@meta.data[, c(
   "scanvi_Lake_label",                  "scanvi_Lake_confidence"
 )] %>% head()
 
-CisplatinGCObj@meta.data$scanvi_MKA_label %>% unique()
-CisplatinGCObj@meta.data$Raw_cell_type %>% unique()
-CisplatinGCObj@meta.data$scanvi_Lake_label %>% unique()
+# Note, we need to put the MKA annotation, consistently with the Lake annotation. The MKA reference uses more granular subtypes (e.g. PTS1-3, CTAL/MTAL, DCT/CNT) which we will need to harmonise to the shared L1 vocabulary later on. For now, we just want to confirm that the MKA annotation is present and looks reasonable.
+
+CisplatinGCObj0@meta.data$scanvi_MKA_label %>% unique()
+CisplatinGCObj0@meta.data$Raw_cell_type %>% unique()
+CisplatinGCObj0@meta.data$scanvi_Lake_label %>% unique()
+CisplatinGCObj0@meta.data$Seaurat_Transfer_Predicted_MKA %>% unique()
+CisplatinGCObj0@meta.data$Seaurat_Transfer_Predicted_Lake %>% unique()
 
 
 ```
 
 
-# we reclustered these samples using the same parameters as the main paper, but with all 3 conditions together. So the cluster labels are different from the original annotation script — we need to re-derive the cluster-level majority vote and UCell validation based on the new clusters.
+# We reclustered these samples using the same parameters as the main paper, but with all 3 conditions together. So the cluster labels are different from the original annotation script — we need to re-derive the cluster-level majority vote and UCell validation based on the new clusters.
 
 ```{r}
-CisplatinGCObj <- subset(CisplatinGCObj, subset = DataSet %in% c("Vehicle","Cisplatin","Cisplatin-GC"))
+
+# We generate another Raw_cell_type_L1 column. The annotation is basically similar to the 
+CisplatinGCObj <- subset(CisplatinGCObj0, subset = DataSet %in% c("Vehicle","Cisplatin","Cisplatin-GC"))
 # Note: we keep Vehicle-GC in the object for annotation purposes, but exclude from downstream analysis to avoid confounding by GC effects.
+
+# Convert annotation columns to character to prevent factor level mismatches after subsetting
+ann_cols <- c("Seaurat_Transfer_Predicted_MKA", "Seaurat_Transfer_Predicted_Lake",
+              "scanvi_MKA_label", "scanvi_Lake_label", "Raw_cell_type")
+for (col in ann_cols) {
+  if (col %in% colnames(CisplatinGCObj@meta.data)) {
+    CisplatinGCObj@meta.data[[col]] <- as.character(CisplatinGCObj@meta.data[[col]])
+    CisplatinGCObj@meta.data[[col]][is.na(CisplatinGCObj@meta.data[[col]])] <- "Unknown"
+  }
+}
+cat("MKA label distribution after subset:\n")
+print(table(CisplatinGCObj$Seaurat_Transfer_Predicted_MKA, useNA = "always"))
 
 # we recluster these samples together, so we need to re-derive the cluster-level majority vote and UCell validation based on the new clusters. The per-cell annotations from the five methods are still valid, but the cluster labels have changed.
 
+mt_genes <- grep("^mt-", rownames(CisplatinGCObj), value = TRUE, ignore.case = TRUE)
+all_genes <- rownames(CisplatinGCObj)
+non_mt_genes <- setdiff(all_genes, mt_genes)
+
+CisplatinGCObj[["percent.mt"]] <- PercentageFeatureSet(CisplatinGCObj, pattern = "^mt-")
+
 CisplatinGCObj <- CisplatinGCObj %>%
     NormalizeData() %>%
-    FindVariableFeatures(selection.method = "vst") %>%
-    ScaleData()
+    FindVariableFeatures(selection.method = "vst")
 
-CisplatinGCObj <- RunPCA(CisplatinGCObj, verbose = TRUE,  npcs = 30)
-CisplatinGCObj <- RunUMAP(CisplatinGCObj, dims = 1:30)
-CisplatinGCObj <- FindNeighbors(CisplatinGCObj, dims = 1:30)
-CisplatinGCObj <- FindClusters(CisplatinGCObj,  resolution = 1,algorithm = 1)
+VariableFeatures(CisplatinGCObj) <- setdiff(VariableFeatures(CisplatinGCObj), mt_genes)
 
-# ElbowPlot(rnaAggr, ndims = 50) # to determine number of dimensions for clustering
-#CisplatinGCObj <- RunHarmony(CisplatinGCObj, group.by.vars = c("DataSet"), reduction.save = "harmony")
-# CisplatinGCObj <- RunUMAP(CisplatinGCObj, dims = 1:30, reduction = "harmony")
-# CisplatinGCObj <- FindNeighbors(CisplatinGCObj, dims = 1:30,  reduction = "harmony")
-# CisplatinGCObj <- FindClusters(CisplatinGCObj,  resolution = 1,algorithm = 1)
+CisplatinGCObj <- ScaleData(CisplatinGCObj, features = non_mt_genes,
+                             vars.to.regress = "percent.mt")
 
+CisplatinGCObj <- RunPCA(CisplatinGCObj, verbose = TRUE, npcs = 30)
+
+# Elbow plot to choose the PC cutoff before clustering
+elbow_p <- ElbowPlot(CisplatinGCObj, ndims = 50)
+ggsave(paste0(OutDir, "ElbowPlot_PCA.pdf"), plot = elbow_p, height = 4, width = 6)
+
+CisplatinGCObj <- RunHarmony(CisplatinGCObj, group.by.vars = "DataSet", reduction = "pca",
+                              reduction.save = "harmony", verbose = TRUE)
+
+# Join per-sample RNA layers into one — required for FindMarkers / AverageExpression in Seurat v5
+CisplatinGCObj <- JoinLayers(CisplatinGCObj)
+
+CisplatinGCObj <- FindNeighbors(CisplatinGCObj, reduction = "harmony", dims = 1:20)
+CisplatinGCObj <- FindClusters(CisplatinGCObj, resolution = 1, algorithm = 1)
+
+CisplatinGCObj <- RunUMAP(CisplatinGCObj, reduction = "harmony", dims = 1:20,
+                           min.dist = 0.1, spread = 1.5, n.neighbors = 20)
 # saveRDS
 saveRDS(CisplatinGCObj,
         file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_Annotation.RDS"))
 
-DimPlot(CisplatinGCObj,  split.by = "DataSet", label = TRUE, ncol = 3) +
+CisplatinDimplotClusters<- DimPlot(CisplatinGCObj,  split.by = "DataSet", label = TRUE, ncol = 3) + scale_color_hue() +
   ggtitle("Reclustering of Vehicle + Cisplatin samples") +
-  theme(legend.position = "none")
+  theme(legend.position = "right")
+
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_DimPlot.pdf"), plot = CisplatinDimplotClusters, height = 5, width = 14)
 
 
-DimPlot(CisplatinGCObj, group.by = "Seaurat_Transfer_Predicted_Lake",split.by = "DataSet", label = TRUE, ncol = 3) +
-  ggtitle("Reclustering of Vehicle + Cisplatin samples") +
-  theme(legend.position = "none")
+CisplatinGCObj@meta.data %>% head()
 
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_DimPlot<- DimPlot(CisplatinGCObj, group.by = "Seaurat_Transfer_Predicted_Lake",split.by = "DataSet", label = TRUE, ncol = 3) +  scale_color_hue()+
+  ggtitle("Reclustering of Vehicle + Cisplatin samples STP Lake") +
+  theme(legend.position = "right")
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_DimPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_DimPlot, height = 5, width = 14)
+
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPMKA_DimPlot<- DimPlot(CisplatinGCObj, group.by = "Seaurat_Transfer_Predicted_MKA",split.by = "DataSet", label = TRUE) +  scale_color_hue()+
+  ggtitle("Reclustering of Vehicle + Cisplatin samples STP MKA") +
+  theme(legend.position = "right")
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPMKA_DimPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPMKA_DimPlot, height = 5, width = 14)
+
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanviLake_DimPlot<- DimPlot(CisplatinGCObj, group.by = "scanvi_Lake_label",split.by = "DataSet", label = TRUE, ncol = 3) +
+  ggtitle("Reclustering of Vehicle + Cisplatin samples scanvi Lake") + scale_color_hue() +
+  theme(legend.position = "right")
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanviLake_DimPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanviLake_DimPlot, height = 5, width = 14)
+
+
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_DimPlot<- DimPlot(CisplatinGCObj, group.by = "scanvi_MKA_label",split.by = "DataSet", label = TRUE, ncol = 3) +
+  ggtitle("Reclustering of Vehicle + Cisplatin samples scanvi MKA") + scale_color_hue() +
+  theme(legend.position = "right")
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_DimPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_DimPlot, height = 5, width = 14)
 
 ```
 
 
+```{r marker-featureplots}
+# Manually annotate the UMAP
+kidney_signatures <- list(
+  PT         = c("Lrp2","Slc34a1","Slc13a3"),
+  PT_S1S2    = c("Slc5a2","Slc34a1","Lrp2"),
+  PT_S3      = c("Slc22a6","Slc22a8"),
+  TAL        = c("Umod","Slc12a1","Cldn10","Kcnj1","Ptger3"),
+  DCT        = c("Slc12a3","Pvalb","Wnk1","Trpm6","Fxyd2"),
+  CNT        = c("Klk1","Slc8a1","Calb1"),
+  LOH        = c("Slc14a2","Aqp1","Clcnka"),
+  PC         = c("Aqp2","Hsd11b2","Scnn1g"),
+  IC         = c("Atp6v1g3","Aqp6","Slc26a7"),
+  ICA        = c("Atp6v1g3","Aqp6","Kit","Slc4a1","Slc26a7"),
+  ICB        = c("Atp6v1g3","Slc26a4","Spink8","Hmx2"),
+  POD        = c("Wt1","Nphs1","Nphs2"),
+  END        = c("Cdh5","Pecam1","Kdr","Emcn","Plvap"),
+  FIB        = c("Col1a1","Col3a1","Fbn1","Lum","Pdgfra","Dcn"),
+  Mesangial  = c("Pdgfrb","Acta2","Tagln"),
+  Pericyte   = c("Pdgfrb","Rgs5","Kcnj8"),
+  PEC        = c("Krt8","Krt18","Claudin1"),
+  pDC        = c("Siglech","Bst2","Irf7"),
+  Neutrophil = c("S100a8","S100a9","Ly6g","Mpo"),
+  Macrophage = c("C1qa","C1qb","Aif1","Adgre1","Cd68"),
+  T_cells    = c("Cd3e","Cd247","Trac"),
+  B_cells    = c("Cd79a","Cd79b","Ms4a1"),
+  NK_CD8     = c("Nkg7","Ccl5","Gzmb","Cd8a")
+)
 
+DefaultAssay(CisplatinGCObj) <-"RNA"
+# For each cell type, create a subfolder and save one FeaturePlot per marker gene split by DataSet
+for (ct in names(kidney_signatures)) {
+  ct_dir <- paste0(OutDir, "MarkerFeaturePlots/", ct, "/")
+  dir.create(ct_dir, recursive = TRUE, showWarnings = FALSE)
+
+  candidates <- intersect(kidney_signatures[[ct]], rownames(CisplatinGCObj))
+  # Drop genes where all cells have NA or zero expression to avoid FeaturePlot errors
+  # FetchData handles Seurat v5 multi-layer assays correctly
+  if (length(candidates) > 0) {
+    gene_df <- FetchData(CisplatinGCObj, vars = candidates, layer = "data")
+    markers <- candidates[colSums(!is.na(gene_df) & gene_df > 0) > 0]
+  } else {
+    markers <- character(0)
+  }
+
+  for (gene in markers) {
+    p <- FeaturePlot(CisplatinGCObj, features = gene,
+                     split.by = "DataSet", ncol = 3,
+                     order = TRUE) &
+         theme(legend.position = "right")
+    ggsave(paste0(ct_dir, gene, "_FeaturePlot.pdf"),
+           plot = p, height = 4, width = 14)
+  }
+}
+
+```
 
 # Harmonise all five methods to shared L1 vocabulary
 
@@ -227,21 +346,34 @@ print(cluster_votes, n=Inf)
 # UCell marker-gene scoring (independent validation)
 
 ```{r ucell-scoring}
-# Mouse kidney L1 marker signatures — from published literature
-kidney_signatures <- list(
-  PT      = c("Lrp2","Slc34a1","Slc13a3","Cubn","Ass1"),
-  TAL     = c("Umod","Slc12a1","Cldn10","Egf","Kcnj1"),
-  DCT     = c("Slc12a3","Pvalb","Wnk1","Calb1"),
-  CNT     = c("Klk1","Slc8a1","Calb1","Trpv5"),
-  LOH     = c("Slc14a2","Fst","Bst1","Aqp1"),
-  PC      = c("Aqp2","Hsd11b2","Scnn1g","Avpr2"),
-  IC      = c("Atp6v1g3","Aqp6","Slc26a7","Foxi1"),
-  POD     = c("Wt1","Nphs1","Nphs2","Podxl"),
-  END     = c("Cdh5","Pecam1","Igfbp3","Flt1"),
-  FIB     = c("Col3a1","Fbn1","Col1a1","Pdgfra"),
-  Myeloid  = c("Cd14","Fcgr3","Csf1r","Lyz2","Adgre1"),
-  Lymphoid = c("Ptprc","Cd3e","Cd19","Nkg7","Gnly")
-)
+# Mouse kidney marker signatures — from published literature
+CelltypeMarkers <- list()
+CelltypeMarkers[["PT"]]          <- c("Lrp2","Slc34a1","Slc13a3")
+CelltypeMarkers[["PT_S1S2"]]     <- c("Slc5a2","Slc34a1","Lrp2")
+CelltypeMarkers[["PT_S3"]]       <- c("Slc22a6","Slc22a8","Havcr1")
+CelltypeMarkers[["DCT"]]         <- c("Slc12a3","Pvalb","Wnk1","Trpm6","Fxyd2")
+CelltypeMarkers[["TAL"]]         <- c("Umod","Slc12a1","Cldn10","Kcnj1","Ptger3")
+CelltypeMarkers[["CNT"]]         <- c("Klk1","Slc8a1","Calb1")
+CelltypeMarkers[["LOH"]]         <- c("Slc14a2","Aqp1","Clcnka")
+CelltypeMarkers[["PC"]]          <- c("Aqp2","Hsd11b2","Scnn1g")
+CelltypeMarkers[["IC"]]          <- c("Atp6v1g3","Aqp6","Slc26a7")
+CelltypeMarkers[["ICA"]]         <- c("Atp6v1g3","Aqp6","Kit","Slc4a1","Slc26a7")
+CelltypeMarkers[["ICB"]]         <- c("Atp6v1g3","Slc26a4","Spink8","Hmx2")
+CelltypeMarkers[["POD"]]         <- c("Wt1","Nphs1","Nphs2")
+CelltypeMarkers[["END"]]         <- c("Cdh5","Pecam1","Kdr","Emcn","Plvap")
+CelltypeMarkers[["FIB"]]         <- c("Col1a1","Col3a1","Fbn1","Lum","Pdgfra","Dcn")
+CelltypeMarkers[["Mesangial"]]   <- c("Pdgfrb","Acta2","Tagln")
+CelltypeMarkers[["Pericyte"]]    <- c("Pdgfrb","Rgs5","Kcnj8")
+CelltypeMarkers[["PEC"]]         <- c("Krt8","Krt18","Claudin1")
+CelltypeMarkers[["pDC"]]         <- c("Siglech","Bst2","Irf7")
+CelltypeMarkers[["Neutrophil"]]  <- c("S100a8","S100a9","Ly6g","Mpo")
+CelltypeMarkers[["Macrophage"]]  <- c("C1qa","C1qb","Aif1","Adgre1","Cd68")
+CelltypeMarkers[["T_cells"]]     <- c("Cd3e","Cd247","Trac")
+CelltypeMarkers[["B_cells"]]     <- c("Cd79a","Cd79b","Ms4a1")
+CelltypeMarkers[["NK_CD8"]]      <- c("Nkg7","Ccl5","Gzmb","Cd8a")
+
+# Use CelltypeMarkers as the signatures object throughout
+kidney_signatures <- CelltypeMarkers
 
 CisplatinGCObj <- AddModuleScore_UCell(CisplatinGCObj, features = kidney_signatures,
                                        name = "_UCell")
@@ -434,6 +566,33 @@ pheatmap::pheatmap(
   height = 8, width = 6,
   main = "UCell scores per cluster (scaled)"
 )
+```
+
+```{r marker-featureplots}
+# For each cell type, create a subfolder and save one FeaturePlot per marker gene split by DataSet
+for (ct in names(kidney_signatures)) {
+  ct_dir <- paste0(OutDir, "MarkerFeaturePlots/", ct, "/")
+  dir.create(ct_dir, recursive = TRUE, showWarnings = FALSE)
+
+  candidates <- intersect(kidney_signatures[[ct]], rownames(CisplatinGCObj))
+  # Drop genes where all cells have NA or zero expression to avoid FeaturePlot errors
+  # FetchData handles Seurat v5 multi-layer assays correctly
+  if (length(candidates) > 0) {
+    gene_df <- FetchData(CisplatinGCObj, vars = candidates, layer = "data")
+    markers <- candidates[colSums(!is.na(gene_df) & gene_df > 0) > 0]
+  } else {
+    markers <- character(0)
+  }
+
+  for (gene in markers) {
+    p <- FeaturePlot(CisplatinGCObj, features = gene,
+                     split.by = "DataSet", ncol = 3,
+                     order = TRUE) &
+         theme(legend.position = "right")
+    ggsave(paste0(ct_dir, gene, "_FeaturePlot.pdf"),
+           plot = p, height = 4, width = 14)
+  }
+}
 ```
 
 ```{r session}

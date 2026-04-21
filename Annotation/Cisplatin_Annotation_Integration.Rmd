@@ -96,10 +96,11 @@ options(future.globals.maxSize = 1e15)
 ```{r}
 # Object Dir
 
-CisplatinObjDir <- c("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Annotation/")
-OutDir <- c("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Annotation/")
+CisplatinObjDir <- c("/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/")
+OutDir <- c("/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/IntegrateL1/")
 
-AnnDir <- c("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/scripts/Integration/")
+dir.create(OutDir, showWarnings = FALSE)
+AnnDir <- c("/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/")
 
 setwd(OutDir)
 ```
@@ -107,8 +108,6 @@ setwd(OutDir)
 # Read the proceeded file
 
 ```{r}
-# annotation file
-IndividualAnnotation<- read.csv(paste0(AnnDir, "query_scanvi_manual_seurat_annotations.csv"))
 # the single cell RDS
 CisplatinObj <- readRDS(paste0(CisplatinObjDir, "Cisplatin_Vehicle_Raw_Predict_Annotation.RDS"))
 
