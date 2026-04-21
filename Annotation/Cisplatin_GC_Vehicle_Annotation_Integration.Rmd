@@ -135,6 +135,10 @@ CisplatinGCObj <- RunUMAP(CisplatinGCObj, reduction = "harmony", dims = 1:20,
 saveRDS(CisplatinGCObj,
         file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_Annotation.RDS"))
 
+CisplatinGCObj<- readRDS(
+  file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_Annotation.RDS")
+)
+
 CisplatinDimplotClusters<- DimPlot(CisplatinGCObj,  split.by = "DataSet", label = TRUE, ncol = 3) + scale_color_hue() +
   ggtitle("Reclustering of Vehicle + Cisplatin samples") +
   theme(legend.position = "right")
@@ -182,10 +186,12 @@ kidney_signatures <- list(
   PT         = c("Lrp2","Slc34a1","Slc13a3"),
   PT_S1S2    = c("Slc5a2","Slc34a1","Lrp2"),
   PT_S3      = c("Slc22a6","Slc22a8"),
+  LOH        = c("Slc14a2","Aqp1","Clcnka"),
   TAL        = c("Umod","Slc12a1","Cldn10","Kcnj1","Ptger3"),
+  ATL        = c("Cldn4","Cldn3","Ly6a","Slc14a2"),
+  Urothelium = c("Upk2","Upk3a","Upk1b","Krt7","Krt19","Trp63"),
   DCT        = c("Slc12a3","Pvalb","Wnk1","Trpm6","Fxyd2"),
   CNT        = c("Klk1","Slc8a1","Calb1"),
-  LOH        = c("Slc14a2","Aqp1","Clcnka"),
   PC         = c("Aqp2","Hsd11b2","Scnn1g"),
   IC         = c("Atp6v1g3","Aqp6","Slc26a7"),
   ICA        = c("Atp6v1g3","Aqp6","Kit","Slc4a1","Slc26a7"),
@@ -196,12 +202,17 @@ kidney_signatures <- list(
   Mesangial  = c("Pdgfrb","Acta2","Tagln"),
   Pericyte   = c("Pdgfrb","Rgs5","Kcnj8"),
   PEC        = c("Krt8","Krt18","Claudin1"),
+  Urothelium = c("Upk1a","Upk2","Upk3a","Krt5","Krt14"),
   pDC        = c("Siglech","Bst2","Irf7"),
   Neutrophil = c("S100a8","S100a9","Ly6g","Mpo"),
   Macrophage = c("C1qa","C1qb","Aif1","Adgre1","Cd68"),
   T_cells    = c("Cd3e","Cd247","Trac"),
   B_cells    = c("Cd79a","Cd79b","Ms4a1"),
-  NK_CD8     = c("Nkg7","Ccl5","Gzmb","Cd8a")
+  NK_CD8     = c("Nkg7","Ccl5","Gzmb","Cd8a"),
+  Myeloid    = c("Itgam","Csf1r","Lyz2","Aif1","Fcgr3"), # note: Myeloid is a bit non-specific, but we just want to confirm that these clusters express some myeloid markers and are distinct from lymphoid clusters
+  Lymphoid   = c("Ptprc","Il7r","Cd3e","Cd79a","Nkg7") # note: Lymphoid is also non-specific, but we just want to confirm that these clusters express some lymphoid markers and are distinct from myeloid clusters
+  # note: CD11b + CSF1R cover all myeloid lineages (macrophage, monocyte, DC, neutrophil); Lyz2 and Aif1 are pan-myeloid in mouse;
+  # note:  Cd79a, Nkg7	CD45 (Ptprc) is pan-immune; Il7r marks T/ILC precursors; Cd3e/Cd79a/Nkg7 cover T, B, and NK lineages respectively
 )
 
 DefaultAssay(CisplatinGCObj) <-"RNA"
@@ -211,8 +222,7 @@ for (ct in names(kidney_signatures)) {
   dir.create(ct_dir, recursive = TRUE, showWarnings = FALSE)
 
   candidates <- intersect(kidney_signatures[[ct]], rownames(CisplatinGCObj))
-  # Drop genes where all cells have NA or zero expression to avoid FeaturePlot errors
-  # FetchData handles Seurat v5 multi-layer assays correctly
+  # Pre-filter: drop genes where all cells have NA or zero expression
   if (length(candidates) > 0) {
     gene_df <- FetchData(CisplatinGCObj, vars = candidates, layer = "data")
     markers <- candidates[colSums(!is.na(gene_df) & gene_df > 0) > 0]
@@ -221,22 +231,109 @@ for (ct in names(kidney_signatures)) {
   }
 
   for (gene in markers) {
-    p <- FeaturePlot(CisplatinGCObj, features = gene,
-                     split.by = "DataSet", ncol = 3,
-                     order = TRUE) &
-         theme(legend.position = "right")
-    ggsave(paste0(ct_dir, gene, "_FeaturePlot.pdf"),
-           plot = p, height = 4, width = 14)
+    tryCatch({
+      p <- FeaturePlot(CisplatinGCObj, features = gene,
+                       split.by = "DataSet", ncol = 3,
+                       order = TRUE) &
+           theme(legend.position = "right")
+      ggsave(paste0(ct_dir, gene, "_FeaturePlot.pdf"),
+             plot = p, height = 4, width = 14)
+    }, error = function(e) {
+      message("Skipping ", gene, " (", ct, "): ", conditionMessage(e))
+    })
   }
 }
 
 ```
 
+```{r}
+# we need to divide the cluster 5, cluster 14  
+Idents(CisplatinGCObj) <- "RNA_snn_res.1"
+
+# CisplatinGCObj <- FindSubCluster(CisplatinGCObj, cluster = c("5","13"), graph.name = "RNA_snn",
+#                         subcluster.name = "Sub1", resolution = 0.2)
+# Idents(CisplatinGCObj) <- "Sub1"
+
+# DimPlot(CisplatinGCObj, group.by = "Sub1", split.by = "DataSet", label = TRUE, ncol = 3) + scale_color_hue() +
+#   ggtitle("Subclustering of Cluster 5 and Cluster 14") +
+#   theme(legend.position = "right")
+
+# # CisplatinGCObj <- FindSubCluster(CisplatinGCObj, cluster = c("14"), graph.name = "RNA_snn",
+# #                         subcluster.name = "Sub2", resolution = 0.6)
+# CisplatinGCObj <- FindSubCluster(CisplatinGCObj, cluster = c("11","15","12","17"), graph.name = "RNA_snn",
+#                          subcluster.name = "Sub2", resolution = 0.2)
+# Idents(CisplatinGCObj) <- "Sub2"
+
+# DimPlot(CisplatinGCObj, group.by = "Sub2", split.by = "DataSet", label = TRUE, ncol = 3) + scale_color_hue() +
+#   ggtitle("Subclustering of Cluster 5 and Cluster 14") +
+#   theme(legend.position = "right")
+CisplatinGCObj <- FindSubCluster(CisplatinGCObj, cluster = c("5"), graph.name = "RNA_snn",
+                         subcluster.name = "Sub1", resolution = 0.8)
+
+Idents(CisplatinGCObj) <- "Sub1"
+
+
+CisplatinGCObj <- FindSubCluster(CisplatinGCObj, cluster = c("14"), graph.name = "RNA_snn",
+                         subcluster.name = "Sub2", resolution = 0.2)
+
+Idents(CisplatinGCObj) <- "Sub2"
+
+
+all_markers_in_obj <- intersect(unique(unlist(kidney_signatures)), rownames(CisplatinGCObj))
+DotPlot(CisplatinGCObj, features = all_markers_in_obj) + RotatedAxis()
+
+# we create the annotation for each cluster
+FinalCluster <- as.character(levels(factor(CisplatinGCObj$Sub2)))
+CellType <- data.frame(cluster = FinalCluster, cell = FinalCluster)
+
+CellType[CellType$cluster %in% c("0","1","2","3","6","9","18"), 2] <- "PT"
+
+CellType[CellType$cluster %in% c("7"), 2] <- "DCT"
+CellType[CellType$cluster %in% c("4"),         2] <- "TAL"
+
+CellType[CellType$cluster %in% c("5_0","5_1","5_2","5_3","5_6"),  2] <- "PC"
+
+CellType[CellType$cluster %in% c("13"),  2] <- "IC"
+CellType[CellType$cluster %in% c("5_5"),  2] <- "CNT"
+
+
+CellType[CellType$cluster %in% c("5_4"),  2] <- "IC/CNT"
+
+CellType[CellType$cluster %in% c("14_0"),         2] <- "DTL"
+
+CellType[CellType$cluster %in% c("14_1"),         2] <- "PapE"
+
+CellType[CellType$cluster %in% c("11","15","12","17"),         2] <- "END"
+
+CellType[CellType$cluster %in% c("8"),        2] <- "Myeloid"
+CellType[CellType$cluster %in% c("10"),         2] <- "Lymphoid"
+CellType[CellType$cluster %in% c("16"),         2] <- "VSM/P"
+
+CisplatinGCObj@meta.data$Raw_cell_type_rcl <- sapply(
+  CisplatinGCObj@meta.data$Sub2,
+  function(x) { CellType[CellType$cluster %in% x, 2] }
+)
+CisplatinGCObj@meta.data$Raw_cell_type_rcl_Confidence <- 1
+
+
+Idents(CisplatinGCObj) <- "Raw_cell_type_rcl"
+
+DotPlot(CisplatinGCObj, features = all_markers_in_obj) + RotatedAxis()
+
+# saveRDS
+saveRDS(CisplatinGCObj,
+        file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_NoVehGC_Annotation.RDS"))
+
+```
+
+
 # Harmonise all five methods to shared L1 vocabulary
 
 ```{r harmonise}
 # ── L1 levels used throughout ────────────────────────────────────────────────
-L1_levels <- c("PT","TAL","DCT","CNT","ATL","PC","IC","CD","POD","END","FIB","Mes","Myeloid","Lymphoid")
+L1_levels <- c("PT","TAL","DCT","CNT","PC","IC","IC/CNT","POD","END","VSM/P","PapE","Myeloid","Lymphoid")
+length(L1_levels) # 13 main cell types (excluding "Uncertain")
+levels(Idents(CisplatinGCObj))
 
 # ── 1. Lake-style verbose labels (Seurat Transfer Lake & scANVI Lake) ─────────
 # we mainly use the Lake style 
@@ -355,6 +452,8 @@ CelltypeMarkers[["DCT"]]         <- c("Slc12a3","Pvalb","Wnk1","Trpm6","Fxyd2")
 CelltypeMarkers[["TAL"]]         <- c("Umod","Slc12a1","Cldn10","Kcnj1","Ptger3")
 CelltypeMarkers[["CNT"]]         <- c("Klk1","Slc8a1","Calb1")
 CelltypeMarkers[["LOH"]]         <- c("Slc14a2","Aqp1","Clcnka")
+CelltypeMarkers[["ATL"]]         <- c("Cldn4","Cldn3","Ly6a","Slc14a2")
+CelltypeMarkers[["Urothelium"]]  <- c("Upk2","Upk3a","Upk1b","Krt7","Krt19","Trp63")
 CelltypeMarkers[["PC"]]          <- c("Aqp2","Hsd11b2","Scnn1g")
 CelltypeMarkers[["IC"]]          <- c("Atp6v1g3","Aqp6","Slc26a7")
 CelltypeMarkers[["ICA"]]         <- c("Atp6v1g3","Aqp6","Kit","Slc4a1","Slc26a7")
@@ -371,6 +470,8 @@ CelltypeMarkers[["Macrophage"]]  <- c("C1qa","C1qb","Aif1","Adgre1","Cd68")
 CelltypeMarkers[["T_cells"]]     <- c("Cd3e","Cd247","Trac")
 CelltypeMarkers[["B_cells"]]     <- c("Cd79a","Cd79b","Ms4a1")
 CelltypeMarkers[["NK_CD8"]]      <- c("Nkg7","Ccl5","Gzmb","Cd8a")
+CelltypeMarkers[["Myeloid"]]     <- c("Itgam","Csf1r","Lyz2","Aif1","Fcgr3")
+CelltypeMarkers[["Lymphoid"]]    <- c("Ptprc","Il7r","Cd3e","Cd79a","Nkg7")
 
 # Use CelltypeMarkers as the signatures object throughout
 kidney_signatures <- CelltypeMarkers
@@ -566,35 +667,4 @@ pheatmap::pheatmap(
   height = 8, width = 6,
   main = "UCell scores per cluster (scaled)"
 )
-```
-
-```{r marker-featureplots}
-# For each cell type, create a subfolder and save one FeaturePlot per marker gene split by DataSet
-for (ct in names(kidney_signatures)) {
-  ct_dir <- paste0(OutDir, "MarkerFeaturePlots/", ct, "/")
-  dir.create(ct_dir, recursive = TRUE, showWarnings = FALSE)
-
-  candidates <- intersect(kidney_signatures[[ct]], rownames(CisplatinGCObj))
-  # Drop genes where all cells have NA or zero expression to avoid FeaturePlot errors
-  # FetchData handles Seurat v5 multi-layer assays correctly
-  if (length(candidates) > 0) {
-    gene_df <- FetchData(CisplatinGCObj, vars = candidates, layer = "data")
-    markers <- candidates[colSums(!is.na(gene_df) & gene_df > 0) > 0]
-  } else {
-    markers <- character(0)
-  }
-
-  for (gene in markers) {
-    p <- FeaturePlot(CisplatinGCObj, features = gene,
-                     split.by = "DataSet", ncol = 3,
-                     order = TRUE) &
-         theme(legend.position = "right")
-    ggsave(paste0(ct_dir, gene, "_FeaturePlot.pdf"),
-           plot = p, height = 4, width = 14)
-  }
-}
-```
-
-```{r session}
-sessionInfo()
 ```
