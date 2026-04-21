@@ -1,7 +1,7 @@
 # Annotation Pipeline — Cisplatin / GC / Vehicle scRNA-seq
 
 **Author:** Xin Wang  
-**Dataset:** 4-condition mouse kidney single-cell dataset (Vehicle, Vehicle-GC, Cisplatin, Cisplatin-GC)
+**Dataset:** 3-condition mouse kidney single-cell dataset (Vehicle, Cisplatin, Cisplatin-GC)
 
 ---
 

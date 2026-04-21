@@ -1,7 +1,7 @@
 # CisplatinGC — Single-Cell RNA-seq Analysis
 
-Integration and analysis of mouse kidney single-cell RNA-seq data across four treatment conditions:
-**Vehicle**, **Vehicle-GC**, **Cisplatin**, and **Cisplatin-GC**.
+Integration and analysis of mouse kidney single-cell RNA-seq data across three treatment conditions:
+**Vehicle**, **Cisplatin**, and **Cisplatin-GC**.
 
 ---
 
@@ -11,7 +11,7 @@ Cisplatin is one of the most widely used chemotherapeutic agents for treating so
 
 The kidney is the primary route of cisplatin excretion, making the proximal tubule the principal site of drug accumulation and injury. Cisplatin enters tubular epithelial cells via organic cation transporters, where it induces oxidative stress, mitochondrial dysfunction, and apoptosis — ultimately impairing glomerular filtration. Beyond the tubule, cisplatin damages peritubular endothelial cells and triggers immune infiltration, amplifying inflammation and, with repeated exposure, driving progression toward chronic kidney disease.
 
-Single-cell RNA sequencing (scRNA-seq) offers a powerful approach to dissect cell-type-specific transcriptional responses to cisplatin injury. By comparing Vehicle, Vehicle-GC, Cisplatin, and Cisplatin-GC conditions, we can distinguish direct nephrotoxic effects from tumor-mediated systemic alterations, identify vulnerable renal populations, and uncover candidate pathways for nephroprotective strategies.
+Single-cell RNA sequencing (scRNA-seq) offers a powerful approach to dissect cell-type-specific transcriptional responses to cisplatin injury. By comparing Vehicle, Cisplatin, and Cisplatin-GC conditions, we can distinguish direct nephrotoxic effects from tumor-mediated systemic alterations, identify vulnerable renal populations, and uncover candidate pathways for nephroprotective strategies.
 
 ---
 
@@ -22,13 +22,17 @@ CisplatinGC/
 ├── PreProcess/                          # FASTQ processing and cell-barcode quantification
 │   ├── ExtractSequenceCorrectedBaseOnLength.pl   # Read-length filtering (Perl)
 │   ├── PipseekerPipeline_Vehicle.sh              # PipSeeker job for Vehicle
-│   ├── PipseekerPipeline_Vehicle-GC.sh           # PipSeeker job for Vehicle-GC
 │   ├── PipseekerPipeline_Cisplatin.sh            # PipSeeker job for Cisplatin
 │   └── PipseekerPipeline_Cisplatin-GC.sh         # PipSeeker job for Cisplatin-GC
-└── Integration/                         # Downstream R analysis
-    ├── Cisplatin_Vehicle_GC_Integration.r         # Main integration script (R)
-    ├── Cisplatin_Vehicle_GC_Integration.sh        # SLURM job wrapper for R script
-    └── Cisplatin_Vehicle_GC_Integration.rmd       # R Markdown version
+├── Integration/                         # Downstream R analysis
+│   ├── Cisplatin_Vehicle_GC_Integration.r         # Main integration script (R)
+│   ├── Cisplatin_Vehicle_GC_Integration.sh        # SLURM job wrapper for R script
+│   └── Cisplatin_Vehicle_GC_Integration.rmd       # R Markdown version
+└── Annotation/                          # Cell type annotation pipeline
+    ├── Cisplatin_GC_Vehicle_Annotation.Rmd        # Step 1: Seurat transfer + scANVI prep
+    ├── Cisplatin_GC_Vehicle_scvi_annotation*.ipynb # Step 2: scANVI label inference (Python)
+    ├── Cisplatin_GC_Vehicle_Annotation_Integration.Rmd  # Step 3: Consensus annotation
+    └── README.md                                  # Annotation method documentation
 ```
 
 ---
@@ -89,6 +93,30 @@ The main script `Cisplatin_Vehicle_GC_Integration.r` performs the following step
 - **FeaturePlot** for urothelial and stem-cell markers (e.g., `Krt14`, `Trp63`, `Upk2`)
 - **DotPlot** across kidney cell-type marker panel (urothelial, proximal tubule, distal tubule, TAL, CNT, DTL, principal cells, intercalated cells, endothelium, fibroblasts, immune cells)
 - Outputs saved to `CandidateMarkers/`
+
+---
+
+### Step 3 — Cell Type Annotation (Annotation/)
+
+See [Annotation/README.md](Annotation/README.md) for full details.
+
+Cell type annotation uses a consensus approach combining five independent methods:
+
+| # | Method | Reference |
+|---|--------|-----------|
+| 1 | Seurat label transfer | MKA atlas |
+| 2 | Seurat label transfer | Lake 2025 |
+| 3 | Manual annotation | — |
+| 4 | scANVI | MKA atlas |
+| 5 | scANVI | Lake 2025 |
+
+All five labels are harmonised to a shared 14-class L1 vocabulary, then combined by **cluster-level majority vote**. UCell module scores across 23 cell-type signatures provide independent marker-gene validation. Harmony batch correction is applied across `DataSet` during re-clustering.
+
+**Key outputs:**
+
+- `Cisplatin_GC_Vehicle_Final_Annotated_v04202026.rds` — final annotated Seurat object
+- `PerCell_Annotation_Summary.csv` — per-cell label table for all five methods
+- `MarkerFeaturePlots/<CellType>/` — per-gene feature plots split by condition
 
 ---
 
