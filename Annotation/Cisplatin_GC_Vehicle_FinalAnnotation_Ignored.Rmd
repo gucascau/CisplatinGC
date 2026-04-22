@@ -1,0 +1,357 @@
+---
+title: "Cisplatin_GC_Vehicle_FinalAnnotation"
+author: "Xin Wang"
+date: "2026-04-22"
+output: html_document
+description: |
+  Final cell type annotation combining two complementary strategies:
+
+  PRIMARY — Cluster-level majority vote
+    For each Seurat sub-cluster, votes from all five methods across all cells
+    are pooled. The plurality label becomes the cluster annotation. This is
+    robust to per-cell noise and the standard approach in the field.
+
+  SUPPORTING — Per-cell weighted ensemble (validation layer)
+    Each cell's per-cell weighted label (method_weight × normalised confidence)
+    is compared to the cluster label. Cells where they disagree are flagged as
+    "Discordant" — candidates for manual inspection or downstream exclusion.
+
+  Confidence tiers:
+    High   : cluster vote fraction ≥ 70%  AND  per-cell agrees with cluster
+    Medium : cluster vote fraction ≥ 50%  OR   per-cell agrees with cluster
+    Low    : cluster vote fraction <  50%  AND  per-cell disagrees
+
+  Input : Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS
+  Output: same RDS with ClusterAnnotation, WeightedAnnotation,
+          Cell_Concordant, AnnotationConfidence, FinalAnnotation added
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+
+options(future.globals.maxSize = 1e15)
+```
+
+# Directories
+
+```{r dirs}
+AnnDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/"
+OutDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/IntegrateL1/"
+
+setwd(OutDir)
+```
+
+# Read L1-harmonised object
+
+```{r read}
+CisplatinGCObj <- readRDS(
+  paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS")
+)
+
+method_label_cols <- c("L1_SeuratMKA", "L1_SeuratLake", "L1_Raw",
+                        "L1_scanviMKA", "L1_scanviLake")
+stopifnot(all(method_label_cols %in% colnames(CisplatinGCObj@meta.data)))
+
+cat("Cells per dataset:\n")
+print(table(CisplatinGCObj$DataSet))
+```
+
+# PRIMARY: Cluster-level majority vote
+
+Pool all votes from all five methods across every cell in each cluster.
+The plurality label (excluding "Uncertain") wins.
+
+```{r cluster-majority}
+cluster_votes <- CisplatinGCObj@meta.data %>%
+  select(Sub2, all_of(method_label_cols)) %>%
+  pivot_longer(all_of(method_label_cols), names_to = "Method", values_to = "L1") %>%
+  filter(!is.na(L1), L1 != "Uncertain") %>%
+  group_by(Sub2, L1) %>%
+  summarise(votes = n(), .groups = "drop") %>%
+  group_by(Sub2) %>%
+  mutate(
+    total_votes          = sum(votes),
+    ClusterAnnotation_frac = votes / total_votes
+  ) %>%
+  slice_max(votes, n = 1, with_ties = FALSE) %>%
+  rename(ClusterAnnotation = L1) %>%
+  select(Sub2, ClusterAnnotation, ClusterAnnotation_frac, total_votes) %>%
+  ungroup()
+
+cat("Cluster-level majority vote:\n")
+print(cluster_votes, n = Inf)
+
+# Map cluster label back to every cell
+CisplatinGCObj@meta.data <- CisplatinGCObj@meta.data %>%
+  left_join(cluster_votes, by = "Sub2")
+
+cat("\nCluster annotation distribution (cells):\n")
+print(table(CisplatinGCObj@meta.data$ClusterAnnotation, useNA = "always"))
+
+write.csv(cluster_votes,
+          file = paste0(OutDir, "Cluster_MajorityVote_Final.csv"),
+          row.names = FALSE)
+```
+
+# SUPPORTING: Per-cell weighted ensemble
+
+Each cell gets an independent label from the five methods weighted by
+normalised per-cell confidence. Used only to validate and flag — not as
+the primary label.
+
+```{r weighted-ensemble}
+# Equal weights: each method contributes equally, as no published benchmark
+# directly comparing all five methods on mouse kidney data is available.
+method_weights <- c(
+  L1_SeuratMKA  = 0.20,
+  L1_SeuratLake = 0.20,
+  L1_Raw        = 0.20,
+  L1_scanviMKA  = 0.20,
+  L1_scanviLake = 0.20
+)
+stopifnot(abs(sum(method_weights) - 1) < 1e-9)
+
+method_score_cols <- c(
+  L1_SeuratMKA  = "Seaurat_Transfer_Predicted_MKA.max",
+  L1_SeuratLake = "Seaurat_Transfer_Predicted_Lake.max",
+  L1_Raw        = "Raw_cell_type_Confidence",
+  L1_scanviMKA  = "scanvi_MKA_confidence",
+  L1_scanviLake = "scanvi_Lake_confidence"
+)
+
+# Min-max normalise to [0,1] so scores from different methods are comparable
+normalize_01 <- function(x) {
+  x <- as.numeric(x)
+  x[is.na(x)] <- 0
+  r <- range(x, na.rm = TRUE)
+  if (diff(r) < 1e-10) return(rep(1.0, length(x)))
+  (x - r[1]) / (r[2] - r[1])
+}
+
+meta     <- CisplatinGCObj@meta.data
+n_cells  <- nrow(meta)
+
+all_labels <- sort(unique(na.omit(unlist(
+  lapply(method_label_cols, function(m) {
+    v <- meta[[m]]; v[!is.na(v) & v != "Uncertain"]
+  })
+))))
+
+score_matrix <- matrix(0.0, nrow = n_cells, ncol = length(all_labels),
+                       dimnames = list(rownames(meta), all_labels))
+
+for (method in names(method_weights)) {
+  labels   <- meta[[method]]
+  scores   <- normalize_01(meta[[method_score_cols[method]]])
+  weighted <- method_weights[method] * scores
+
+  valid   <- !is.na(labels) & labels != "Uncertain" & labels %in% all_labels
+  rows    <- which(valid)
+  cols    <- match(labels[valid], all_labels)
+  lin_idx <- rows + (cols - 1L) * n_cells
+  score_matrix[lin_idx] <- score_matrix[lin_idx] + weighted[rows]
+}
+
+row_max  <- apply(score_matrix, 1, max)
+best_col <- max.col(score_matrix, ties.method = "first")
+
+CisplatinGCObj@meta.data$WeightedAnnotation       <- ifelse(row_max == 0, "Uncertain",
+                                                            all_labels[best_col])
+CisplatinGCObj@meta.data$WeightedAnnotation_score <- row_max
+
+cat("Per-cell weighted annotation distribution:\n")
+print(table(CisplatinGCObj@meta.data$WeightedAnnotation, useNA = "always"))
+```
+
+# Concordance: cluster majority vs. per-cell weighted ensemble
+
+Cells where the two approaches agree are high confidence.
+Discordant cells are candidates for manual review.
+
+```{r concordance}
+CisplatinGCObj@meta.data <- CisplatinGCObj@meta.data %>%
+  mutate(
+    Cell_Concordant = case_when(
+      WeightedAnnotation == "Uncertain" ~ NA,
+      TRUE ~ (ClusterAnnotation == WeightedAnnotation)
+    )
+  )
+
+cat("Concordance (per cell):\n")
+print(table(CisplatinGCObj@meta.data$Cell_Concordant, useNA = "always"))
+cat(sprintf("Overall concordance rate: %.1f%%\n",
+            100 * mean(CisplatinGCObj@meta.data$Cell_Concordant, na.rm = TRUE)))
+
+# Per-cluster concordance rate
+cluster_concordance <- CisplatinGCObj@meta.data %>%
+  group_by(Sub2, ClusterAnnotation, ClusterAnnotation_frac) %>%
+  summarise(
+    n_cells         = n(),
+    pct_concordant  = round(100 * mean(Cell_Concordant, na.rm = TRUE), 1),
+    mean_w_score    = round(mean(WeightedAnnotation_score), 3),
+    .groups = "drop"
+  ) %>%
+  arrange(pct_concordant)
+
+cat("\nPer-cluster concordance (sorted by lowest first):\n")
+print(cluster_concordance, n = Inf)
+
+write.csv(cluster_concordance,
+          file = paste0(OutDir, "Cluster_Concordance_ClusterMajority_vs_Weighted.csv"),
+          row.names = FALSE)
+```
+
+# Confidence tiers
+
+Tiers combine cluster vote strength and per-cell concordance.
+
+```{r confidence-tiers}
+CisplatinGCObj@meta.data <- CisplatinGCObj@meta.data %>%
+  mutate(
+    AnnotationConfidence = case_when(
+      is.na(ClusterAnnotation)                                          ~ "Uncertain",
+      ClusterAnnotation_frac >= 0.70 & Cell_Concordant == TRUE         ~ "High",
+      ClusterAnnotation_frac >= 0.50 | Cell_Concordant == TRUE         ~ "Medium",
+      TRUE                                                              ~ "Low"
+    )
+  )
+
+cat("Confidence tier distribution:\n")
+print(table(CisplatinGCObj@meta.data$AnnotationConfidence, useNA = "always"))
+
+cat("\nTier breakdown per cluster annotation:\n")
+print(table(CisplatinGCObj@meta.data$ClusterAnnotation,
+            CisplatinGCObj@meta.data$AnnotationConfidence))
+```
+
+# Final annotation
+
+The final label is the cluster majority. Low-confidence cells
+(discordant AND weak cluster vote) are flagged — not removed —
+so downstream analyses can choose how to handle them.
+
+```{r final-annotation}
+CisplatinGCObj@meta.data <- CisplatinGCObj@meta.data %>%
+  mutate(FinalAnnotation = ClusterAnnotation)
+
+cat("Final annotation distribution:\n")
+print(table(CisplatinGCObj@meta.data$FinalAnnotation, useNA = "always"))
+
+# Per-cell summary table
+per_cell_summary <- CisplatinGCObj@meta.data %>%
+  select(
+    Sub2,
+    L1_SeuratMKA, L1_SeuratLake, L1_Raw, L1_scanviMKA, L1_scanviLake,
+    ClusterAnnotation, ClusterAnnotation_frac,
+    WeightedAnnotation, WeightedAnnotation_score,
+    Cell_Concordant, AnnotationConfidence, FinalAnnotation
+  )
+
+write.csv(per_cell_summary,
+          file = paste0(OutDir, "PerCell_FinalAnnotation_Summary.csv"))
+```
+
+# Visualisation
+
+```{r dimplot-final}
+p_final <- DimPlot(CisplatinGCObj, group.by = "FinalAnnotation",
+                   split.by = "DataSet", label = TRUE, ncol = 3) +
+           scale_color_hue() +
+           ggtitle("Final annotation (cluster majority vote)") +
+           theme(legend.position = "right")
+ggsave(paste0(OutDir, "FinalAnnotation_DimPlot.pdf"),
+       plot = p_final, height = 5, width = 14)
+p_final
+```
+
+```{r dimplot-confidence}
+p_conf <- DimPlot(CisplatinGCObj, group.by = "AnnotationConfidence",
+                  split.by = "DataSet", label = FALSE, ncol = 3) +
+          scale_colour_manual(values = c(High      = "#2ca02c",
+                                         Medium    = "#ff7f0e",
+                                         Low       = "#d62728",
+                                         Uncertain = "grey80")) +
+          ggtitle("Annotation confidence (cluster vote strength + per-cell concordance)") +
+          theme(legend.position = "right")
+ggsave(paste0(OutDir, "AnnotationConfidence_DimPlot.pdf"),
+       plot = p_conf, height = 5, width = 14)
+p_conf
+```
+
+```{r dimplot-concordance}
+# Highlight discordant cells: where do per-cell and cluster labels disagree?
+CisplatinGCObj@meta.data$Concordance_label <- ifelse(
+  is.na(CisplatinGCObj@meta.data$Cell_Concordant), "Uncertain",
+  ifelse(CisplatinGCObj@meta.data$Cell_Concordant, "Concordant", "Discordant")
+)
+
+p_disc <- DimPlot(CisplatinGCObj, group.by = "Concordance_label",
+                  split.by = "DataSet", label = FALSE, ncol = 3) +
+          scale_colour_manual(values = c(Concordant  = "#2ca02c",
+                                         Discordant  = "#d62728",
+                                         Uncertain   = "grey80")) +
+          ggtitle("Per-cell concordance with cluster majority label") +
+          theme(legend.position = "right")
+ggsave(paste0(OutDir, "CellConcordance_DimPlot.pdf"),
+       plot = p_disc, height = 5, width = 14)
+p_disc
+```
+
+```{r barplot-tier}
+df_tier <- CisplatinGCObj@meta.data %>%
+  filter(!is.na(FinalAnnotation)) %>%
+  group_by(FinalAnnotation, AnnotationConfidence) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(FinalAnnotation) %>%
+  mutate(pct = 100 * n / sum(n),
+         AnnotationConfidence = factor(AnnotationConfidence,
+                                       levels = c("High", "Medium", "Low")))
+
+p_tier_bar <- ggplot(df_tier,
+                     aes(x = FinalAnnotation, y = pct, fill = AnnotationConfidence)) +
+  geom_col() +
+  scale_fill_manual(values = c(High = "#2ca02c", Medium = "#ff7f0e", Low = "#d62728")) +
+  geom_hline(yintercept = 80, linetype = "dashed", colour = "grey40") +
+  theme_minimal() +
+  labs(title = "Confidence tier breakdown per cell type",
+       x = NULL, y = "% of cells", fill = "Confidence") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(OutDir, "FinalAnnotation_ConfidenceBar.pdf"),
+       plot = p_tier_bar, height = 4, width = 7)
+p_tier_bar
+```
+
+```{r barplot-vote-fraction}
+# Show how strongly each cluster voted for its winning label
+p_vote <- ggplot(cluster_votes,
+                 aes(x = reorder(Sub2, ClusterAnnotation_frac),
+                     y = ClusterAnnotation_frac,
+                     fill = ClusterAnnotation)) +
+  geom_col() +
+  geom_hline(yintercept = c(0.5, 0.7), linetype = "dashed", colour = "grey40") +
+  scale_fill_hue() +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Cluster vote fraction for winning label",
+       x = "Cluster (Sub2)", y = "Vote fraction", fill = "Cell type") +
+  theme(legend.position = "right")
+ggsave(paste0(OutDir, "Cluster_VoteFraction_Bar.pdf"),
+       plot = p_vote, height = 7, width = 8)
+p_vote
+```
+
+# Save
+
+```{r save}
+saveRDS(CisplatinGCObj,
+        file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS"))
+cat("Saved. New columns: ClusterAnnotation, ClusterAnnotation_frac,",
+    "WeightedAnnotation, WeightedAnnotation_score,",
+    "Cell_Concordant, AnnotationConfidence, FinalAnnotation\n")
+```

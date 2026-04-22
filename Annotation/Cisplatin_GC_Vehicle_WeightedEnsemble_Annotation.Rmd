@@ -1,0 +1,335 @@
+---
+title: "Cisplatin_GC_Vehicle_WeightedEnsemble_Annotation"
+author: "Xin Wang"
+date: "2026-04-22"
+output: html_document
+description: |
+  Weighted ensemble annotation combining five L1 cell-type predictions:
+    1. Seurat Transfer (MKA reference)   — L1_SeuratMKA
+    2. Seurat Transfer (Lake reference)  — L1_SeuratLake
+    3. Manual / Raw annotation           — L1_Raw
+    4. scANVI (MKA reference)            — L1_scanviMKA
+    5. scANVI (Lake reference)           — L1_scanviLake
+
+  Each method's vote is weighted by method_weight × per-cell confidence score.
+  The label with the highest total weighted score is the final call.
+
+  Input : Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS
+  Output: Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Weighted_Annotation.RDS
+          (WeightedAnnotation, WeightedAnnotation_score, WeightedAnnotation_margin added)
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(ggsci)
+library(RColorBrewer)
+
+options(future.globals.maxSize = 1e15)
+```
+
+# Directories
+
+```{r dirs}
+AnnDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/"
+OutDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/IntegrateL1/"
+
+setwd(OutDir)
+```
+
+# Read L1-harmonised object
+
+```{r read}
+CisplatinGCObj <- readRDS(
+  paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS")
+)
+
+# Quick check: confirm all required columns are present
+required_cols <- c(
+  "L1_SeuratMKA",  "Seaurat_Transfer_Predicted_MKA.max",
+  "L1_SeuratLake", "Seaurat_Transfer_Predicted_Lake.max",
+  "L1_Raw",        "Raw_cell_type_Confidence",
+  "L1_scanviMKA",  "scanvi_MKA_confidence",
+  "L1_scanviLake", "scanvi_Lake_confidence"
+)
+missing_cols <- setdiff(required_cols, colnames(CisplatinGCObj@meta.data))
+if (length(missing_cols) > 0) {
+  stop("Missing columns in metadata: ", paste(missing_cols, collapse = ", "))
+}
+
+CisplatinGCObj@meta.data[, required_cols] %>% head()
+```
+
+# Define weights and confidence score mappings
+
+```{r weights}
+# Equal weights: each method contributes equally, as no published benchmark
+# directly comparing all five methods on mouse kidney data is available.
+method_weights <- c(
+  L1_SeuratMKA  = 0.20,
+  L1_SeuratLake = 0.20,
+  L1_Raw        = 0.20,
+  L1_scanviMKA  = 0.20,
+  L1_scanviLake = 0.20
+)
+stopifnot(abs(sum(method_weights) - 1) < 1e-9)
+cat("Method weights:\n"); print(method_weights)
+
+# Per-cell confidence score column for each method
+method_score_cols <- c(
+  L1_SeuratMKA  = "Seaurat_Transfer_Predicted_MKA.max",
+  L1_SeuratLake = "Seaurat_Transfer_Predicted_Lake.max",
+  L1_Raw        = "Raw_cell_type_Confidence",
+  L1_scanviMKA  = "scanvi_MKA_confidence",
+  L1_scanviLake = "scanvi_Lake_confidence"
+)
+```
+
+# Build weighted score matrix and assign labels
+
+```{r weighted-ensemble}
+# Min-max normalise a numeric vector to [0, 1].
+# Constant columns (e.g. Raw_cell_type_Confidence = 1 for all cells) return 1
+# so they still contribute their full method weight uniformly.
+normalize_01 <- function(x) {
+  x <- as.numeric(x)
+  x[is.na(x)] <- 0
+  r <- range(x, na.rm = TRUE)
+  if (diff(r) < 1e-10) return(rep(1.0, length(x)))
+  (x - r[1]) / (r[2] - r[1])
+}
+
+meta <- CisplatinGCObj@meta.data
+
+# Show pre-normalisation score distributions so scale differences are visible
+cat("Raw confidence score ranges (before normalisation):\n")
+for (method in names(method_weights)) {
+  sc <- as.numeric(meta[[method_score_cols[method]]])
+  cat(sprintf("  %-40s min=%.3f  median=%.3f  max=%.3f\n",
+              method_score_cols[method], min(sc, na.rm=TRUE),
+              median(sc, na.rm=TRUE), max(sc, na.rm=TRUE)))
+}
+
+# Collect every L1 label observed across all five methods (excluding "Uncertain")
+all_labels <- sort(unique(na.omit(unlist(
+  lapply(names(method_weights), function(m) {
+    v <- meta[[m]]
+    v[!is.na(v) & v != "Uncertain"]
+  })
+))))
+cat("L1 labels in ensemble:", paste(all_labels, collapse = ", "), "\n")
+
+# Initialise score matrix: rows = cells, cols = L1 labels
+n_cells      <- nrow(meta)
+score_matrix <- matrix(0.0, nrow = n_cells, ncol = length(all_labels),
+                       dimnames = list(rownames(meta), all_labels))
+
+for (method in names(method_weights)) {
+  labels   <- meta[[method]]
+  # Normalise to [0,1] before weighting so scores from different methods
+  # are on a comparable scale before the method_weight is applied
+  scores   <- normalize_01(meta[[method_score_cols[method]]])
+
+  w        <- method_weights[method]
+  weighted <- w * scores
+
+  valid    <- !is.na(labels) & labels != "Uncertain" & labels %in% all_labels
+  rows     <- which(valid)
+  cols     <- match(labels[valid], all_labels)
+
+  # Vectorised accumulation via linear matrix index
+  lin_idx  <- rows + (cols - 1L) * n_cells
+  score_matrix[lin_idx] <- score_matrix[lin_idx] + weighted[rows]
+}
+
+# Final label: column with maximum weighted score per cell
+row_max  <- apply(score_matrix, 1, max)
+best_col <- max.col(score_matrix, ties.method = "first")
+
+# Runner-up score — difference = decision margin (higher = more certain)
+second_max <- apply(score_matrix, 1, function(r) {
+  s <- sort(r, decreasing = TRUE)
+  if (length(s) >= 2L) s[2L] else 0
+})
+
+CisplatinGCObj@meta.data$WeightedAnnotation        <- ifelse(row_max == 0, "Uncertain",
+                                                             all_labels[best_col])
+CisplatinGCObj@meta.data$WeightedAnnotation_score  <- row_max
+CisplatinGCObj@meta.data$WeightedAnnotation_margin <- row_max - second_max
+
+cat("Weighted ensemble annotation distribution:\n")
+print(table(CisplatinGCObj@meta.data$WeightedAnnotation, useNA = "always"))
+```
+
+# Per-cell score summary
+
+```{r score-summary}
+score_summary <- CisplatinGCObj@meta.data %>%
+  group_by(WeightedAnnotation) %>%
+  summarise(
+    n_cells     = n(),
+    mean_score  = round(mean(WeightedAnnotation_score),  3),
+    mean_margin = round(mean(WeightedAnnotation_margin), 3),
+    pct_high_conf = round(100 * mean(WeightedAnnotation_score > 0.5), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_cells))
+
+cat("Score summary per cell type:\n")
+print(score_summary, n = Inf)
+
+write.csv(score_summary,
+          file = paste0(OutDir, "WeightedAnnotation_ScoreSummary.csv"),
+          row.names = FALSE)
+```
+
+# Cluster-level dominant label
+
+```{r cluster-summary}
+weighted_cluster_summary <- CisplatinGCObj@meta.data %>%
+  select(Sub2, WeightedAnnotation, WeightedAnnotation_score, WeightedAnnotation_margin) %>%
+  group_by(Sub2, WeightedAnnotation) %>%
+  summarise(
+    n_cells     = n(),
+    mean_score  = round(mean(WeightedAnnotation_score),  3),
+    mean_margin = round(mean(WeightedAnnotation_margin), 3),
+    .groups = "drop"
+  ) %>%
+  group_by(Sub2) %>%
+  slice_max(n_cells, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+cat("Dominant weighted label per cluster:\n")
+print(weighted_cluster_summary, n = Inf)
+
+write.csv(weighted_cluster_summary,
+          file = paste0(OutDir, "Cluster_WeightedAnnotation_Summary.csv"),
+          row.names = FALSE)
+
+# Add ClusterMajority: simple unweighted plurality vote across the five L1 methods
+# (no confidence scores, just which label appears most often per cell, then
+#  the cluster-level dominant label is the mode of those per-cell votes)
+label_cols <- names(method_weights)   # L1_SeuratMKA, L1_SeuratLake, L1_Raw, L1_scanviMKA, L1_scanviLake
+
+CisplatinGCObj@meta.data$MajorityVote <- apply(
+  CisplatinGCObj@meta.data[, label_cols], 1,
+  function(row) {
+    votes <- row[!is.na(row) & row != "Uncertain"]
+    if (length(votes) == 0) return("Uncertain")
+    names(sort(table(votes), decreasing = TRUE))[1]
+  }
+)
+
+cluster_majority_map <- CisplatinGCObj@meta.data %>%
+  group_by(Sub2, MajorityVote) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(Sub2) %>%
+  slice_max(n, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(Sub2, ClusterMajority = MajorityVote)
+
+# Use match instead of left_join to preserve Seurat metadata rownames
+CisplatinGCObj@meta.data$ClusterMajority <- cluster_majority_map$ClusterMajority[
+  match(CisplatinGCObj@meta.data$Sub2, cluster_majority_map$Sub2)
+]
+
+CisplatinGCObj@meta.data %>% head()
+```
+
+# Comparison: weighted ensemble vs. cluster majority vote
+
+```{r compare-majority}
+if ("ClusterMajority" %in% colnames(CisplatinGCObj@meta.data)) {
+  comparison <- CisplatinGCObj@meta.data %>%
+    select(Sub2, WeightedAnnotation, ClusterMajority) %>%
+    group_by(Sub2) %>%
+    summarise(
+      WeightedAnnotation = names(sort(table(WeightedAnnotation), decreasing = TRUE))[1],
+      ClusterMajority    = ClusterMajority[1],
+      .groups = "drop"
+    ) %>%
+    mutate(Concordant = WeightedAnnotation == ClusterMajority)
+
+  cat("Weighted ensemble vs. cluster majority vote:\n")
+  print(comparison, n = Inf)
+  cat("Concordant clusters:", sum(comparison$Concordant), "/", nrow(comparison), "\n")
+
+  write.csv(comparison,
+            file = paste0(OutDir, "WeightedAnnotation_vs_ClusterMajority.csv"),
+            row.names = FALSE)
+} else {
+  cat("ClusterMajority column not found — skipping comparison.\n")
+}
+```
+
+# Visualisation
+
+```{r dimplot-weighted}
+p_weighted <- DimPlot(CisplatinGCObj, group.by = "WeightedAnnotation",
+                      split.by = "DataSet", label = TRUE, ncol = 3) +
+              scale_color_hue() +
+              ggtitle("Weighted ensemble annotation") +
+              theme(legend.position = "right")
+ggsave(paste0(OutDir, "WeightedAnnotation_DimPlot.pdf"),
+       plot = p_weighted, height = 5, width = 14)
+p_weighted
+cat("Weighted ensemble annotation distribution:\n")
+print(table(CisplatinGCObj@meta.data$WeightedAnnotation, useNA = "always"))
+```
+
+```{r featureplot-score}
+p_score <- FeaturePlot(CisplatinGCObj, features = "WeightedAnnotation_score",
+                       split.by = "DataSet", ncol = 3)  & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")),  limits =c(0, 1))& theme(legend.position = "right") &
+           ggtitle("Weighted annotation confidence score") 
+ggsave(paste0(OutDir, "WeightedAnnotation_Score_FeaturePlot.pdf"),
+       plot = p_score, height = 5, width = 14)
+p_score
+```
+
+```{r featureplot-margin}
+p_margin <- FeaturePlot(CisplatinGCObj, features = "WeightedAnnotation_margin",
+                        split.by = "DataSet", ncol = 3) & scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral")),  limits =c(0, 1))& theme(legend.position = "right") &
+            ggtitle("Weighted annotation decision margin (best - runner-up)")
+ggsave(paste0(OutDir, "WeightedAnnotation_Margin_FeaturePlot.pdf"),
+       plot = p_margin, height = 5, width = 14)
+p_margin
+```
+
+```{r barplot-score}
+df_score <- CisplatinGCObj@meta.data %>%
+  group_by(WeightedAnnotation) %>%
+  summarise(mean_score = mean(WeightedAnnotation_score),
+            sd_score   = sd(WeightedAnnotation_score),
+            .groups = "drop") %>%
+  filter(WeightedAnnotation != "Uncertain") %>%
+  arrange(desc(mean_score))
+
+p_bar <- ggplot(df_score, aes(x = reorder(WeightedAnnotation, -mean_score),
+                               y = mean_score, fill = WeightedAnnotation)) +
+  geom_col() +
+  geom_errorbar(aes(ymin = mean_score - sd_score,
+                    ymax = mean_score + sd_score), width = 0.3) +
+  scale_fill_d3(palette = "category20") +
+  theme_minimal() +
+  labs(title = "Mean weighted score ± SD per cell type",
+       x = NULL, y = "Mean weighted score") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+ggsave(paste0(OutDir, "WeightedAnnotation_MeanScore_Bar.pdf"),
+       plot = p_bar, height = 4, width = 6)
+p_bar
+```
+
+# Save updated object
+
+```{r save}
+saveRDS(CisplatinGCObj,
+        file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Weighted_Annotation.RDS"))
+cat("Saved. WeightedAnnotation, WeightedAnnotation_score, and WeightedAnnotation_margin added to metadata.\n")
+```

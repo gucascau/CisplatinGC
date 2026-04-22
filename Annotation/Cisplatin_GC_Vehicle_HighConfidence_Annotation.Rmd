@@ -1,0 +1,367 @@
+---
+title: "Cisplatin_GC_Vehicle_HighConfidence_Annotation"
+author: "Xin Wang"
+date: "2026-04-24"
+output: html_document
+description: |
+  High-confidence annotation built on top of the weighted ensemble labels.
+  Three layers of evidence are combined into a confidence tier per cell:
+
+    Layer 1 — weighted ensemble score and decision margin (from WeightedEnsemble script)
+    Layer 2 — method agreement count: how many of the 5 methods agree with the winner
+    Layer 3 — cluster coherence: fraction of cells in the same Seurat cluster sharing the label
+
+  Tiers:
+    High   : ≥3 methods agree AND cluster coherence ≥ 70%
+    Medium : ≥2 methods agree OR  cluster coherence ≥ 50%
+    Low    : everything else → replaced by cluster majority as a safer fallback
+
+  Input : Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS
+          (must contain WeightedAnnotation from WeightedEnsemble script)
+  Output: same RDS with AnnotationTier, ClusterCoherence,
+          WeightedAnnotation_n_agree, FinalAnnotation_HC added
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+
+options(future.globals.maxSize = 1e15)
+```
+
+# Directories
+
+```{r dirs}
+AnnDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/"
+OutDir <- "/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/IntegrateL1/"
+
+setwd(OutDir)
+```
+
+# Read object
+
+```{r read}
+CisplatinGCObj <- readRDS(
+  paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Weighted_Annotation.RDS")
+)
+
+# Confirm WeightedAnnotation is present (requires WeightedEnsemble script to have run)
+stopifnot("WeightedAnnotation" %in% colnames(CisplatinGCObj@meta.data))
+
+cat("WeightedAnnotation distribution:\n")
+print(table(CisplatinGCObj@meta.data$WeightedAnnotation, useNA = "always"))
+```
+
+# Layer 2 — method agreement count
+
+How many of the five L1 methods agree with the weighted winner for each cell.
+
+```{r method-agreement}
+method_label_cols <- c("L1_SeuratMKA", "L1_SeuratLake", "L1_Raw",
+                       "L1_scanviMKA", "L1_scanviLake")
+
+meta <- CisplatinGCObj@meta.data
+
+agree_matrix <- sapply(method_label_cols, function(m) {
+  as.integer(
+    !is.na(meta[[m]]) &
+    meta[[m]] != "Uncertain" &
+    meta[[m]] == meta$WeightedAnnotation
+  )
+})
+CisplatinGCObj@meta.data$WeightedAnnotation_n_agree <- rowSums(agree_matrix)
+
+cat("Method agreement count (0–5 methods agreeing with weighted winner):\n")
+print(table(CisplatinGCObj@meta.data$WeightedAnnotation_n_agree))
+```
+
+# Layer 3 — cluster coherence
+
+Within each Seurat sub-cluster, what fraction of cells share the most common
+weighted label. High coherence means the cluster is dominated by one cell type —
+giving more confidence to per-cell calls inside it.
+
+```{r cluster-coherence}
+coherence_tbl <- CisplatinGCObj@meta.data %>%
+  group_by(Sub2) %>%
+  mutate(
+    ClusterCoherence = {
+      valid_labels <- WeightedAnnotation[WeightedAnnotation != "Uncertain"]
+      if (length(valid_labels) == 0) 0
+      else max(table(valid_labels)) / n()
+    }
+  ) %>%
+  ungroup() %>%
+  pull(ClusterCoherence)
+
+CisplatinGCObj@meta.data$ClusterCoherence <- coherence_tbl
+
+cat("Cluster coherence summary (per cell):\n")
+print(summary(CisplatinGCObj@meta.data$ClusterCoherence))
+
+# Per-cluster view
+cluster_coherence_tbl <- CisplatinGCObj@meta.data %>%
+  group_by(Sub2) %>%
+  summarise(ClusterCoherence = round(first(ClusterCoherence), 3),
+            DominantLabel    = names(sort(table(WeightedAnnotation[WeightedAnnotation != "Uncertain"]),
+                                         decreasing = TRUE))[1],
+            .groups = "drop") %>%
+  arrange(ClusterCoherence)
+
+cat("\nPer-cluster coherence:\n")
+print(cluster_coherence_tbl, n = Inf)
+```
+
+# Assign confidence tiers
+
+```{r tiers}
+CisplatinGCObj@meta.data$AnnotationTier <- dplyr::case_when(
+  CisplatinGCObj@meta.data$WeightedAnnotation == "Uncertain"                                                              ~ "Uncertain",
+  CisplatinGCObj@meta.data$WeightedAnnotation_n_agree >= 3 & CisplatinGCObj@meta.data$ClusterCoherence >= 0.70           ~ "High",
+  CisplatinGCObj@meta.data$WeightedAnnotation_n_agree >= 2 | CisplatinGCObj@meta.data$ClusterCoherence >= 0.50           ~ "Medium",
+  TRUE                                                                                                                     ~ "Low"
+)
+
+cat("Confidence tier distribution:\n")
+print(table(CisplatinGCObj@meta.data$AnnotationTier, useNA = "always"))
+
+cat("\nTier breakdown by cell type:\n")
+print(table(CisplatinGCObj@meta.data$WeightedAnnotation,
+            CisplatinGCObj@meta.data$AnnotationTier))
+```
+
+# Final high-confidence annotation
+
+High and Medium cells keep their per-cell weighted label.
+Low cells fall back to the cluster majority label (most common weighted label
+in their Seurat cluster) — a safer, cluster-level call.
+
+```{r final-annotation}
+# Cluster majority derived from weighted labels
+cluster_majority <- CisplatinGCObj@meta.data %>%
+  filter(WeightedAnnotation != "Uncertain") %>%
+  group_by(Sub2, WeightedAnnotation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(Sub2) %>%
+  slice_max(n, n = 1, with_ties = FALSE) %>%
+  rename(ClusterMajority_Weighted = WeightedAnnotation) %>%
+  select(Sub2, ClusterMajority_Weighted)
+
+# Use match to preserve Seurat metadata rownames (left_join drops them)
+CisplatinGCObj@meta.data$ClusterMajority_Weighted <- cluster_majority$ClusterMajority_Weighted[
+  match(CisplatinGCObj@meta.data$Sub2, cluster_majority$Sub2)
+]
+CisplatinGCObj@meta.data$FinalAnnotation_HC <- dplyr::case_when(
+  CisplatinGCObj@meta.data$AnnotationTier %in% c("High", "Medium") ~ CisplatinGCObj@meta.data$WeightedAnnotation,
+  CisplatinGCObj@meta.data$AnnotationTier == "Low"                  ~ CisplatinGCObj@meta.data$ClusterMajority_Weighted,
+  TRUE                                                               ~ "Uncertain"
+)
+
+cat("Final high-confidence annotation distribution:\n")
+print(table(CisplatinGCObj@meta.data$FinalAnnotation_HC, useNA = "always"))
+```
+
+# Cluster-level summary
+
+```{r cluster-summary}
+hc_cluster_summary <- CisplatinGCObj@meta.data %>%
+  group_by(Sub2, FinalAnnotation_HC) %>%
+  summarise(
+    n_cells          = n(),
+    pct_High         = round(100 * mean(AnnotationTier == "High"),   1),
+    pct_Medium       = round(100 * mean(AnnotationTier == "Medium"), 1),
+    pct_Low          = round(100 * mean(AnnotationTier == "Low"),    1),
+    mean_score       = round(mean(WeightedAnnotation_score),    3),
+    mean_n_agree     = round(mean(WeightedAnnotation_n_agree),  2),
+    ClusterCoherence = round(first(ClusterCoherence), 3),
+    .groups = "drop"
+  ) %>%
+  group_by(Sub2) %>%
+  slice_max(n_cells, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(Sub2)
+
+cat("Cluster-level annotation summary:\n")
+print(hc_cluster_summary, n = Inf)
+
+write.csv(hc_cluster_summary,
+          file = paste0(OutDir, "Cluster_HighConfidence_Annotation_Summary.csv"),
+          row.names = FALSE)
+```
+
+# Visualisation
+
+```{r dimplot-tier}
+p_tier <- DimPlot(CisplatinGCObj, group.by = "AnnotationTier",
+                  split.by = "DataSet", label = FALSE, ncol = 3) +
+          scale_colour_manual(values = c(High     = "#2ca02c",
+                                         Medium   = "#ff7f0e",
+                                         Low      = "#d62728",
+                                         Uncertain = "grey80")) +
+          ggtitle("Annotation confidence tier") +
+          theme(legend.position = "right")
+ggsave(paste0(OutDir, "AnnotationTier_DimPlot.pdf"),
+       plot = p_tier, height = 5, width = 14)
+p_tier
+```
+
+```{r dimplot-final}
+p_hc <- DimPlot(CisplatinGCObj, group.by = "FinalAnnotation_HC",
+                split.by = "DataSet", label = TRUE, ncol = 3) +
+        scale_color_hue() +
+        ggtitle("Final high-confidence annotation") +
+        theme(legend.position = "right")
+ggsave(paste0(OutDir, "FinalAnnotation_HC_DimPlot.pdf"),
+       plot = p_hc, height = 5, width = 14)
+p_hc
+```
+
+```{r barplot-tier}
+# Stacked bar: tier composition per final cell type
+df_tier <- CisplatinGCObj@meta.data %>%
+  filter(FinalAnnotation_HC != "Uncertain") %>%
+  group_by(FinalAnnotation_HC, AnnotationTier) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(FinalAnnotation_HC) %>%
+  mutate(pct = 100 * n / sum(n),
+         AnnotationTier = factor(AnnotationTier, levels = c("High", "Medium", "Low")))
+
+p_tier_bar <- ggplot(df_tier,
+                     aes(x = FinalAnnotation_HC, y = pct, fill = AnnotationTier)) +
+  geom_col() +
+  scale_fill_manual(values = c(High = "#2ca02c", Medium = "#ff7f0e", Low = "#d62728")) +
+  geom_hline(yintercept = 80, linetype = "dashed", colour = "grey40") +
+  theme_minimal() +
+  labs(title = "Confidence tier breakdown per cell type",
+       x = NULL, y = "% of cells", fill = "Tier") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(OutDir, "FinalAnnotation_HC_TierBar.pdf"),
+       plot = p_tier_bar, height = 4, width = 7)
+p_tier_bar
+```
+
+```{r dotplot-markers}
+# Nephron-axis order matching your L1 harmonised labels
+celltype_order <- c(
+
+  "PT",                           # Proximal tubule (S1-S3)
+  "DTL",                          # Descending thin limb
+  "TAL",                          # Thick ascending limb
+  "DCT",                          # Distal convoluted tubule
+  "CNT",                          # Connecting tubule
+  "IC/CNT",                       # Intercalated / CNT transitional
+  "PC",                           # Collecting duct principal cell
+  "IC",                           # Intercalated cell (A+B)
+  "POD",                          # Podocyte / PEC
+  "PapE",                         # Papillary epithelium
+  "END",                          # Endothelial (incl. vasa recta)
+  "FIB",                        # Fibroblast / stroma
+  "VSM/P",                        # Vascular smooth muscle / pericyte
+  "Myeloid",                      # Macrophage / monocyte
+  "Lymphoid"                    # T / B / NK
+ 
+)
+
+# Markers derived from your annotation integration script
+marker_list <- c(
+
+  # PT
+  "Lrp2", "Slc34a1", "Slc13a3", "Slc5a2", "Slc22a6",
+  # DTL
+  "Aqp1", "Slc14a1",
+  # TAL
+  "Umod", "Slc12a1", "Cldn10", "Kcnj1", "Ptger3",
+  # DCT
+  "Slc12a3", "Pvalb", "Wnk1", "Fxyd2",
+  # CNT
+  "Klk1", "Slc8a1", "Calb1",
+  # PC
+  "Aqp2", "Hsd11b2", "Scnn1g",
+  # IC
+  "Atp6v1g3", "Aqp6", "Slc4a1", "Slc26a4",
+    # POD
+  "Nphs1", "Nphs2", "Wt1", "Synpo",
+  # END
+  "Pecam1", "Cdh5", "Kdr",
+    # FIB
+  "Col1a1", "Dcn", "Pdgfra"
+  # VSM/P
+  "Acta2", "Tagln", "Rgs5", "Pdgfrb",
+  # Myeloid
+  "C1qa", "C1qb", "Aif1", "Cd68",
+  # Lymphoid
+  "Ptprc", "Cd3e", "Cd79a", "Nkg7",
+
+)
+
+# Order factor levels; any label not in celltype_order is appended at the end
+present_types <- intersect(celltype_order,
+                           unique(CisplatinGCObj@meta.data$FinalAnnotation_HC))
+extra_types   <- setdiff(unique(CisplatinGCObj@meta.data$FinalAnnotation_HC),
+                         c(present_types, "Uncertain"))
+CisplatinGCObj@meta.data$FinalAnnotation_HC <- factor(
+  CisplatinGCObj@meta.data$FinalAnnotation_HC,
+  levels = c(present_types, extra_types, "Uncertain")
+)
+
+# Drop markers absent from the assay to avoid errors
+available_markers <- intersect(marker_list,
+                               rownames(CisplatinGCObj))
+
+p_dot <- DotPlot(CisplatinGCObj,
+                 features  = available_markers,
+                 group.by  = "FinalAnnotation_HC") +
+  #coord_flip() +
+  scale_colour_distiller(palette = "RdYlBu", direction = -1) +
+  theme_minimal(base_size = 10) +
+  theme(axis.text.x  = element_text(angle = 45, hjust = 1, size = 9),
+        axis.text.y  = element_text(size = 9),
+        legend.position = "right") +
+  labs(title = "Marker gene expression by final annotation",
+       x = NULL, y = NULL)
+
+ggsave(paste0(OutDir, "FinalAnnotation_HC_MarkerDotPlot.pdf"),
+       plot = p_dot, height = 12, width = 9)
+
+# Alternative colour scheme for better contrast, rotated x labels for readability
+
+p_dot <- DotPlot(CisplatinGCObj,
+                 features  = available_markers,
+                 group.by  = "FinalAnnotation_HC", cols= "RdYlBu")  +theme(axis.text.x  = element_text(angle = 45, hjust = 1, size = 9))
+
+ggsave(paste0(OutDir, "FinalAnnotation_HC_MarkerDotPlot_2.pdf"),
+       plot = p_dot, height = 12, width = 9)
+
+p_dot
+```
+
+```{r featureplot-agree}
+# Feature plot of method agreement count — spots poorly-supported cells
+p_agree <- FeaturePlot(CisplatinGCObj, features = "WeightedAnnotation_n_agree",
+                       split.by = "DataSet", ncol = 3) +
+           ggtitle("Number of methods agreeing with weighted winner (0–5)")
+ggsave(paste0(OutDir, "WeightedAnnotation_nAgree_FeaturePlot.pdf"),
+       plot = p_agree, height = 5, width = 14)
+p_agree
+```
+
+# Save
+
+```{r save}
+saveRDS(CisplatinGCObj,
+        file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS"))
+
+write.csv(
+  CisplatinGCObj@meta.data[, c(
+    "WeightedAnnotation", "WeightedAnnotation_score", "WeightedAnnotation_margin",
+    "WeightedAnnotation_n_agree", "ClusterCoherence",
+    "AnnotationTier", "FinalAnnotation_HC"
+  )],
+  file = paste0(OutDir, "PerCell_HighConfidence_Annotation_Summary.csv")
+)
+cat("Saved.\n")
+```

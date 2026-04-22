@@ -323,7 +323,9 @@ DotPlot(CisplatinGCObj, features = all_markers_in_obj) + RotatedAxis()
 # saveRDS
 saveRDS(CisplatinGCObj,
         file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_NoVehGC_Annotation.RDS"))
-
+CisplatinGCObj <- readRDS(
+  file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_NoVehGC_Annotation.RDS")
+)
 ```
 
 
@@ -381,6 +383,10 @@ for (col in c("L1_SeuratMKA","L1_SeuratLake","L1_Raw","L1_scanviMKA","L1_scanviL
   n_unc <- sum(CisplatinGCObj@meta.data[[col]] == "Uncertain")
   cat(col, "→ Uncertain:", n_unc, "(", round(100*n_unc/ncol(CisplatinGCObj),1), "%)\n")
 }
+
+saveRDS(CisplatinGCObj,
+        file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS"))
+
 ```
 
 # Per-cell method agreement
