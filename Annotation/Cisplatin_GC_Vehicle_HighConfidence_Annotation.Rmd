@@ -241,7 +241,7 @@ p_tier_bar <- ggplot(df_tier,
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ggsave(paste0(OutDir, "FinalAnnotation_HC_TierBar.pdf"),
        plot = p_tier_bar, height = 4, width = 7)
-p_tier_bar
+#p_tier_bar
 ```
 
 ```{r dotplot-markers}
@@ -268,9 +268,7 @@ celltype_order <- c(
 
 # Markers derived from your annotation integration script
 marker_list <- c(
-
-  # PT
-  "Lrp2", "Slc34a1", "Slc13a3", "Slc5a2", "Slc22a6",
+  "Lrp2", "Slc34a1", "Slc13a3", "Slc5a2", "Slc22a6",# PT
   # DTL
   "Aqp1", "Slc14a1",
   # TAL
@@ -288,14 +286,13 @@ marker_list <- c(
   # END
   "Pecam1", "Cdh5", "Kdr",
     # FIB
-  "Col1a1", "Dcn", "Pdgfra"
+  "Col1a1", "Dcn", "Pdgfra",
   # VSM/P
   "Acta2", "Tagln", "Rgs5", "Pdgfrb",
   # Myeloid
   "C1qa", "C1qb", "Aif1", "Cd68",
   # Lymphoid
-  "Ptprc", "Cd3e", "Cd79a", "Nkg7",
-
+  "Ptprc", "Cd3e", "Cd79a", "Nkg7"
 )
 
 # Order factor levels; any label not in celltype_order is appended at the end
@@ -334,7 +331,7 @@ p_dot <- DotPlot(CisplatinGCObj,
                  group.by  = "FinalAnnotation_HC", cols= "RdYlBu")  +theme(axis.text.x  = element_text(angle = 45, hjust = 1, size = 9))
 
 ggsave(paste0(OutDir, "FinalAnnotation_HC_MarkerDotPlot_2.pdf"),
-       plot = p_dot, height = 12, width = 9)
+       plot = p_dot, height = 6, width = 14)
 
 p_dot
 ```
@@ -353,7 +350,7 @@ p_agree
 
 ```{r save}
 saveRDS(CisplatinGCObj,
-        file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS"))
+        file = paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Weighted_FinalAnnotation.RDS"))
 
 write.csv(
   CisplatinGCObj@meta.data[, c(

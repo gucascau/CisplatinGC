@@ -1,0 +1,792 @@
+---
+title: "Cisplatin_Signaling_Gene_Features"
+author: "Xin Wang"
+date: "2026-02-19"
+output: html_document
+
+    This script is used to measure the signaling or gene features across the samples:
+      
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+# check the session information
+sessionInfo()
+library(dplyr)
+library(Seurat)
+library(patchwork)
+
+#install.packages('devtools') #assuming it is not already installed
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+library(devtools)
+#install_github('andreacirilloac/updateR')
+# install.packages("sctransform")
+# install.packages("ggthemes")
+# loading the libarary
+library(updateR)
+
+library("sctransform")
+library("ggthemes")
+library(Seurat)
+
+# BiocManager::install("limma")
+# BiocManager::install("ComplexHeatmap")
+# BiocManager::install("biomaRt")
+# BiocManager::install("methrix")BiocManager::install("org.Hs.eg.db")
+#devtools::install_github("saeyslab/nichenetr")
+library(limma)
+library(nichenetr)
+library(tidyverse)
+library(dplyr)
+
+library(biomaRt)
+library("data.table")
+
+
+library(umap)
+library(patchwork)
+library(cowplot)
+library(installr)
+
+#install.packages("Matrix", repos = "http://cran.r-project.org")
+### we used discre color palettes from ggsci
+
+library("ggsci")
+library("ggplot2")
+library("gridExtra")
+
+#options(buildtools.check = function(action) TRUE )
+#devtools::install_url('https://cran.r-project.org/src/contrib/Archive/Matrix.utils/Matrix.utils_0.9.7.tar.gz')
+#devtools::install_github('cole-trapnell-lab/monocle3')
+#library(monocle3)
+
+library(harmony)
+library(Seurat)
+#library(SeuratData)
+library(tidyverse)
+
+#library(BPCells)
+library(ggplot2)
+library("devtools")
+library("AnnotationDbi")
+#BiocManager::install("org.Hs.eg.db")
+library("org.Hs.eg.db")
+library("org.Mm.eg.db")
+# BiocManager::install("biomaRt")
+library(biomaRt)
+#library(tibble)
+#library(future)
+library(here)
+library(patchwork)
+library(future)
+#BiocManager::install("nichenetr")
+#library(nichenetr)
+# BiocManager::install(c('BiocGenerics', 'DelayedArray', 'DelayedMatrixStats',
+#                        'limma', 'lme4', 'S4Vectors', 'SingleCellExperiment',
+#                        'SummarizedExperiment', 'batchelor', 'HDF5Array',
+#                        'terra', 'ggrastr'))
+# install.packages("devtools")
+# devtools::install_github('cole-trapnell-lab/monocle3')
+library(monocle3)
+#devtools::install_dev("remotes")
+#remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
+#remotes::install_github(repo ='chris-mcginnis-ucsf/DoubletFinder' )
+#install.packages("DoubletFinder")
+library(DoubletFinder)
+library(future.callr)
+library(ComplexHeatmap)
+
+library(RColorBrewer)
+library(circlize)
+library(monocle3)
+#install.packages("magick")
+library(magick)
+#K means with 6 groups
+
+if(!requireNamespace("BiocManager", quietly = TRUE)){
+  
+  install.packages("BiocManager")
+      
+}
+
+#BiocManager::install(c('BiocGenerics', 'DelayedArray', 'DelayedMatrixStats',
+                       #  # 'limma', 'S4Vectors', 'SingleCellExperiment',
+                       # 'SummarizedExperiment', 'batchelor', 'Matrix.utils', 'EBImage'))
+
+# packages from github
+if(!requireNamespace("devtools", quietly = TRUE)){
+  
+  install.packages("devtools")
+  
+}
+#install.packages("scCustomize")
+library("scCustomize")
+# devtools::install_github(repo = "kueckelj/confuns", force = TRUE)
+# devtools::install_github(repo = "theMILOlab/SPATAData", force = TRUE)
+# devtools::install_github(repo = "theMILOlab/SPATA2", force = TRUE)
+# library(SPATA2)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r}
+# set up the directories
+FeatureDir<- c("/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Features/")
+setwd(FeatureDir)
+
+# single cell directory
+SingleCellObjDir<- c("/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Annotation/IntegrateL1/")
+
+# read the single cell object
+
+CisplatinObj <- readRDS(paste0(SingleCellObjDir,"Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Weighted_FinalAnnotation.RDS"))
+head(CisplatinObj@meta.data)
+
+colnames(CisplatinObj@meta.data)
+
+Idents(CisplatinObj) <- CisplatinObj$FinalAnnotation_HC
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+# we checked the cell cycle score of the datsets
+```{r}
+
+setwd("/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Features/CellCycles/")
+
+cell.cycle.tirosh <- read.csv("http://genomedata.org/rnaseq-tutorial/scrna/CellCycleTiroshSymbol2ID.csv", header=TRUE); # read in the list of genes
+
+write.csv(cell.cycle.tirosh, file = "CellCycleTiroshSymbol2ID.csv")
+
+### convert the gene id from human into mouse
+head(cell.cycle.tirosh)
+dim(cell.cycle.tirosh)
+
+cell.cycle.tirosh$Gene.Symbol <- stringr::str_to_title(cell.cycle.tirosh$Gene.Symbol)
+
+# Fix deprecated mouse gene aliases (official MGI renames)
+alias_map <- c(Mlf1ip = "Cenpu", Fam64a = "Pimreg", Hn1 = "Jpt1")
+cell.cycle.tirosh$Gene.Symbol <- dplyr::recode(cell.cycle.tirosh$Gene.Symbol, !!!alias_map)
+
+# ignore the NxA in the cell cycles
+cell.cycle.tirosh = cell.cycle.tirosh %>% na.omit()
+
+cell.cycle.tirosh
+dim(cell.cycle.tirosh)
+
+### create the S-phage and G2/M phage genes
+s.genes = cell.cycle.tirosh$Gene.Symbol[which(cell.cycle.tirosh$List == "G1/S")]; # create a vector of S-phase genes
+length(s.genes)
+g2m.genes = cell.cycle.tirosh$Gene.Symbol[which(cell.cycle.tirosh$List == "G2/M")]; # create a vector of G2/M-phase genes
+length(g2m.genes)
+
+CisplatinObj <- CellCycleScoring(object=CisplatinObj, s.features=s.genes, g2m.features=g2m.genes, set.ident=TRUE)
+CisplatinObj@meta.data %>% head()
+
+# visualize the mitochondrial rate across samples
+MitichondrionRate<- FeaturePlot(CisplatinObj, features = "percent.mt",split.by = "DataSet") * theme(legend.position = "right")     
+ggsave("MitochondrialRate_Featureplot.pdf", plot=MitichondrionRate, height = 5, width = 12)
+
+# Violin plot of S.Score
+percent.mtVolin<-ggplot(CisplatinObj@meta.data, aes(x=FinalAnnotation_HC, y=percent.mt, fill=DataSet)) +
+  geom_violin(position=position_dodge(width=0.8)) +
+  theme_classic() +
+  labs(y="percent.mt")
+ggsave("MitochondrialRate_Volinplot.pdf", plot=percent.mtVolin, height = 5, width = 12)
+
+# check the Score
+S.ScoreFeature<- FeaturePlot(CisplatinObj, features = "S.Score",split.by = "DataSet") * theme(legend.position = "right")     
+ggsave("S.Score_Featureplot.pdf", plot=S.ScoreFeature, height = 5, width = 12)
+
+G2M.ScoreFeature<- FeaturePlot(CisplatinObj, features = "G2M.Score",split.by = "DataSet") * theme(legend.position = "right")     
+ggsave("G2M.Score_Featureplot.pdf", plot=G2M.ScoreFeature, height = 5, width = 12)
+
+
+## visualize the grouping by cell cycle phages
+pdf("CellCylcle_phages_cluster.pdf", height = 5, width = 10)
+CisplatinObj@meta.data
+DimPlot(CisplatinObj, reduction = "umap", split.by = "DataSet", group.by="Phase")
+dev.off()
+
+CisplatinObj@meta.data %>% dplyr::select_all(Phage, DataSet)
+
+# draw the G2M.Score, S score for each cell type under two condition
+avg_scores <- CisplatinObj@meta.data %>%
+  group_by(FinalAnnotation_HC, DataSet) %>%
+  summarise(
+    mean_S = mean(S.Score, na.rm = TRUE),
+    mean_G2M = mean(G2M.Score, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+avg_scores
+
+# Violin plot of S.Score
+SScore<-ggplot(CisplatinObj@meta.data, aes(x=FinalAnnotation_HC, y=S.Score, fill=DataSet)) +
+  geom_violin(position=position_dodge(width=0.8)) +
+  theme_classic() +
+  labs(y="S Phase Score")
+ggsave("PhageFraction_SScore_Celltype_Condition.pdf", plot = SScore, height = 4, width = 10)
+# Similarly for G2M.Score
+G2MScore <- ggplot(CisplatinObj@meta.data, aes(x=FinalAnnotation_HC, y=G2M.Score, fill=DataSet)) +
+  geom_violin(position=position_dodge(width=0.8)) +
+  theme_classic() +
+  labs(y="G2M Phase Score")
+ggsave("PhageFraction_G2MScore_Celltype_Condition.pdf", plot = G2MScore, height = 4, width = 10)
+phase_fraction <- CisplatinObj@meta.data %>%
+  group_by(FinalAnnotation_HC, DataSet, Phase) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(FinalAnnotation_HC, DataSet) %>%
+  mutate(fraction = n / sum(n)) %>%
+  ungroup()
+
+phase_fraction
+PhageFraction <-ggplot(phase_fraction, aes(x=FinalAnnotation_HC, y=fraction, fill=Phase)) +
+  geom_bar(stat="identity", position="stack") +
+  facet_wrap(~DataSet) +
+  theme_classic() +
+  labs(y="Fraction of cells", x="Cell Type", fill="Cell Cycle Phase")
+
+ggsave("PhageFraction_Celltype_Condition.pdf", plot = PhageFraction, height = 4, width = 12)
+
+
+## for previous cluster:
+
+# Violin plot of S.Score
+SScore<-ggplot(CisplatinObj@meta.data, aes(x=Sub2, y=S.Score, fill=DataSet)) +
+  geom_violin(position=position_dodge(width=0.8)) +
+  theme_classic() +
+  labs(y="S Phase Score")
+ggsave("PhageFraction_SScore_Celltype_Condition_seurat_clusters.pdf", plot = SScore, height = 4, width = 10)
+# Similarly for G2M.Score
+G2MScore <- ggplot(CisplatinObj@meta.data, aes(x=Sub2, y=G2M.Score, fill=DataSet)) +
+  geom_violin(position=position_dodge(width=0.8)) +
+  theme_classic() +
+  labs(y="G2M Phase Score")
+ggsave("PhageFraction_G2MScore_Celltype_Condition_seurat_clusters.pdf", plot = G2MScore, height = 4, width = 10)
+phase_fraction_2 <- CisplatinObj@meta.data %>%
+  group_by(seurat_clusters, DataSet, Phase) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(seurat_clusters, DataSet) %>%
+  mutate(fraction = n / sum(n)) %>%
+  ungroup()
+
+PhageFraction <-ggplot(phase_fraction_2, aes(x=Sub2, y=fraction, fill=Phase)) +
+  geom_bar(stat="identity", position="stack") +
+  facet_wrap(~DataSet) +
+  theme_classic() +
+  labs(y="Fraction of cells", x="Cell Type", fill="Cell Cycle Phase")
+
+ggsave("PhageFraction_Celltype_Condition_seurat_clusters.pdf", plot = PhageFraction, height = 4, width = 12)
+
+
+```
+
+
+```{r}
+
+CisplatinObj@meta.data %>% head()
+
+Idents(CisplatinObj) <- "FinalAnnotation_HC"
+EGFSignaling<- list()
+EGFSignaling[["OxidativePhosphorylation"]] <-
+  c("Ndufa13", "Ndufa3", "Ndufb1", "Ndufb7", "mt-Co3", "mt-Nd1","mt-Nd3") # CD4 Naive cells: Cd4+, CD27+, CD45RA+, CD127+, CD25-, CD45RO-
+
+
+EGFSignaling[["MitochondrialDysfunction"]] <-
+  c("Bace2",
+    "Ndufa13",
+    "Ndufa7",
+    "Ndufb1",
+    "mt-Co3",
+    "mt-Nd1",
+    "mt-Nd3") # CD8 Naive T cells: Cd8+, CD27+, CD28+, CD45RA+, CD62L+, CCR7+, CD45RO-
+# ErbB Signaling
+EGFSignaling[["ErbbSignaling"]] <- c("Egf",
+                                     "Erbb2",
+                                     "Erbb4",
+                                     "Map2k6",
+                                     "Pak4",
+                                     "Pik3c2g")
+
+# PI3K–AKT–mTOR axis
+EGFSignaling[["PI3K_AKT_mTOR"]] <- c("Pik3c2g",
+                                     "Akt1",
+                                     "Mtor",
+                                     "Rps6kb1")
+
+# MAPK pathway
+EGFSignaling[["MAPK"]] <- c("Map2k6",
+                            "Mapk1",
+                            "Mapk3",
+                            "Braf",
+                            "Raf1")
+
+# JAK–STAT
+EGFSignaling[["JAK_STAT"]] <- c("Stat3",
+                                "Stat5b",
+                                "Jak1",
+                                "Jak2")
+
+# TGF-beta / Fibrosis
+EGFSignaling[["TGFb_SMAD"]] <- c("Tgfb1",
+                                 "Smad2",
+                                 "Smad3")
+
+# Integrin / FAK signaling
+EGFSignaling[["Integrin_FAK"]] <- c("Bcar3",
+                                    "Capn10",
+                                    "Pak4",
+                                    "Pik3c2g",
+                                    "Rhoq")
+
+# Insulin signaling
+EGFSignaling[["InsulinSignaling"]] <- c("Insr",
+                                        "Pik3c2g",
+                                        "Plcl1",
+                                        "Stat5b",
+                                        "Vamp2")
+
+# EGFR ligands
+EGFSignaling[["EGFR_Ligands"]] <- c("Egf",
+                                    "Hbegf",
+                                    "Tgfa",
+                                    "Areg")
+
+# Integrin Signaling
+EGFSignaling[["IntegrinSignaling"]] <- c("Bcar3",
+                                         "Capn10",
+                                         "Pak4",
+                                         "Pfn2",
+                                         "Pik3c2g",
+                                         "Rhoq",
+                                         "Tspan7")
+
+# IL-15 Production
+EGFSignaling[["IL15Production"]] <- c("Dstyk",
+                                      "Erbb2",
+                                      "Erbb4",
+                                      "Insr",
+                                      "Map2k6")
+
+# Insulin Secretion Signaling
+EGFSignaling[["InsulinSecretion"]] <- c("Gcgr",
+                                        "Insr",
+                                        "Pik3c2g",
+                                        "Plcl1",
+                                        "Scnn1a",
+                                        "Stat5b",
+                                        "Vamp2")
+
+# Semaphorin Repulsive Signaling
+EGFSignaling[["SemaphorinSignaling"]] <- c("Erbb2",
+                                           "Map2k6",
+                                           "Pak4",
+                                           "Pik3c2g",
+                                           "Sema6d")
+
+# Insulin Receptor Signaling
+EGFSignaling[["InsulinReceptorSignaling"]] <- c("Insr",
+                                                "Pik3c2g",
+                                                "Rhoq",
+                                                "Scnn1a",
+                                                "Vamp2")
+
+# Senescence Pathway
+EGFSignaling[["Senescence"]] <- c("Capn10",
+                                  "Map2k6",
+                                  "Nf1",
+                                  "Phf1",
+                                  "Pik3c2g",
+                                  "Ppm1l",
+                                  "Rbl2")
+
+# FAK Signaling
+EGFSignaling[["FAKSignaling"]] <- c("Capn10",
+                                    "Egf",
+                                    "Pak4",
+                                    "Pik3c2g")
+
+# Neuregulin Signaling
+EGFSignaling[["NeuregulinSignaling"]] <- c("Egf",
+                                           "Erbb2",
+                                           "Erbb4",
+                                           "Stat5b")
+
+# Sperm Motility
+EGFSignaling[["SpermMotility"]] <- c("Dstyk",
+                                     "Erbb2",
+                                     "Erbb4",
+                                     "Insr",
+                                     "Map2k6",
+                                     "Plcl1")
+
+# Pancreatic Adenocarcinoma Signaling
+EGFSignaling[["PancreaticAdenocarcinoma"]] <- c("Egf",
+                                                "Erbb2",
+                                                "Pik3c2g",
+                                                "Vegfa")
+
+# Glioblastoma Signaling
+EGFSignaling[["GlioblastomaSignaling"]] <- c("Egf",
+                                             "Nf1",
+                                             "Pik3c2g",
+                                             "Plcl1",
+                                             "Rhoq")
+
+# Actin Cytoskeleton Signaling
+EGFSignaling[["ActinCytoskeleton"]] <- c("Cyfip2",
+                                         "Egf",
+                                         "Kng1",
+                                         "Pak4",
+                                         "Pfn2",
+                                         "Pik3c2g")
+
+# LXR/RXR Activation
+EGFSignaling[["LXR_RXR"]] <- c("Acaca",
+                               "Hadh",
+                               "Kng1",
+                               "Lpl")
+
+# Growth Hormone Signaling
+EGFSignaling[["GrowthHormoneSignaling"]] <- c("Igfbp3",
+                                              "Pik3c2g",
+                                              "Stat5b")
+
+# Xenobiotic Metabolism CAR
+EGFSignaling[["XenobioticCAR"]] <- c("Aldh5a1",
+                                     "Aldh6a1",
+                                     "Hs6st2",
+                                     "Map2k6",
+                                     "Ppm1l")
+
+# ILK Signaling
+EGFSignaling[["ILKSignaling"]] <- c("Map2k6",
+                                    "Pik3c2g",
+                                    "Ppm1l",
+                                    "Rhoq",
+                                    "Vegfa")
+
+# STAT3 Pathway
+EGFSignaling[["STAT3Pathway"]] <- c("Egf",
+                                    "Insr",
+                                    "Ndufa13",
+                                    "Vegfa")
+
+# Axonal Guidance
+EGFSignaling[["AxonalGuidance"]] <- c("Egf",
+                                      "Erbb2",
+                                      "Ntn4",
+                                      "Pak4",
+                                      "Pfn2",
+                                      "Pik3c2g",
+                                      "Plcl1",
+                                      "Sema6d",
+                                      "Vegfa")
+
+# EGFR Ligands
+EGFSignaling[["EGFR_Ligands"]] <- c("Egf",
+                                    "Hbegf",
+                                    "Tgfa",
+                                    "Areg")
+
+# Core Injury / Repair Modules
+
+EGFSignaling[["MAPK_RAS_RAF_MEK_ERK"]] <- c("Hras",
+                                            "Kras",
+                                            "Nras",
+                                            "Braf",
+                                            "Raf1",
+                                            "Map2k1",
+                                            "Map2k2",
+                                            "Mapk1",
+                                            "Mapk3")
+
+EGFSignaling[["PI3K_AKT_mTOR"]] <- c("Pik3c2g",
+                                     "Akt1",
+                                     "Mtor",
+                                     "Rps6kb1")
+
+EGFSignaling[["JAK_STAT"]] <- c("Jak1",
+                                "Jak2",
+                                "Stat3",
+                                "Stat5b")
+
+EGFSignaling[["TGFb_SMAD"]] <- c("Tgfb1",
+                                 "Smad2",
+                                 "Smad3")
+
+EGFSignaling[["mTORC1_p70S6K"]] <- c("Mtor",    # MTOR
+                                     "Rptor",  # RPTOR
+                                     "Mlst8",  # MLST8
+                                     "Rps6kb1", # RPS6KB1
+                                     "Rps6",   # RPS6
+                                     "Eif4ebp1"# EIF4EBP1
+                                     )
+
+EGFSignaling[["EGFReceptors"]] <- c("Egf","Egfr","Erbb2","Erbb3","Erbb4" )
+# Egfr, Vegf, Cdh5
+EGFSignaling[["MitoETC"]] <- 
+c("Ndufa1","Ndufa10","Ndufa11","Ndufa2","Ndufa3","Ndufa4","Ndufa5","Ndufa6","Ndufa7","Ndufa8","Ndufab1","Ndufb10","Ndufb2","Ndufb3","Ndufb4","Ndufb4c","Ndufb5","Ndufb6","Ndufb7","Ndufb8","Ndufb9","Ndufc1","Ndufc2","Ndufs1","Ndufs2","Ndufs3","Ndufs4","Ndufs5","Ndufs6","Ndufs6b","Ndufs7","Ndufs8","Ndufv1","Ndufv2","Ndufv3","Sdha","Sdhb","Sdhc","Sdhd","Uqcr11","Uqcrc1","Uqcrc2","Uqcrfs1","Uqcrh","Uqcrh-ps1","Uqcrq","Bcs1l","Cox4i1","Cox4i2","Cox5a","Cox5b","Cox6a1","Cox6b1","Cox6c","Cox6c2","Cox7a2","Cox7a2l","Cox7b","Cox8a","Cox8c","Atp5f1a","Atp5f1b","Atp5f1c","Atp5pb","Atp5mc1","Atp5mc2","Atp5mc3","Atp5pd","Atp5me","Atp5pf","Atp5mf","Atp5mg","Atp5po")
+#MitETCGenes$Symbol.x
+EGFSignaling[["MitoEncode"]] <- MitEncodeGenes$Symbol.x
+FeatureDir
+length(EGFSignaling)
+for (i in 1:length(EGFSignaling)) {
+  # Kidney Status type name
+  #i=18
+  EGFSignalingType <- names(EGFSignaling[i])
+  #ImmuneCellType <- "Mast_cells"
+  # create a director for the cell type
+  EGFSignalingTypeDir <- paste0(FeatureDir,
+        EGFSignalingType,"/")
+  dir.create(EGFSignalingTypeDir,showWarnings = FALSE)
+  setwd(EGFSignalingTypeDir)
+  
+  DPlots<- DotPlot(CisplatinObj, features =EGFSignaling[[EGFSignalingType]] )+RotatedAxis()
+  ggsave(paste0(EGFSignalingTypeDir, EGFSignalingType, "_ReDotPlot.pdf"), plot= DPlots,height = 8, width = 6)
+ 
+  # generate each feature
+  #ImmuneDiffType[[ImmuneCellType]]
+  for (j in EGFSignaling[[EGFSignalingType]]) {
+    
+    
+    # ignore the genes if they are not exists
+      # generate the distribution from the single cells
+    #rownames(CisplatinObj)
+   if (!(j %in% rownames(CisplatinObj[["RNA"]]))) {
+     next
+     }
+    
+    FeaturePlots <-
+      FeaturePlot(CisplatinObj, features =  j, order =TRUE) + RotatedAxis()
+    ggsave(
+      paste0(
+        EGFSignalingTypeDir,
+        EGFSignalingType,
+        "_",
+        j,
+        "_Feature_GeneMarkers_ReAnnoatation.pdf"
+      ),
+      plot = FeaturePlots,
+      height = 5,
+      width = 5
+    )
+    
+    FeaturePlotsSplit <-
+      FeaturePlot(CisplatinObj, features =  j, order =TRUE, split.by = "DataSet") + RotatedAxis()
+    ggsave(
+      paste0(
+        EGFSignalingTypeDir,
+        EGFSignalingType,
+        "_",
+        j,
+        "_Feature_GeneMarkers_ReAnnoatation_SplitData.pdf"
+      ),
+      plot = FeaturePlotsSplit,
+      height = 5,
+      width = 10
+    )
+    
+    # add the violin plot
+    VlnPlotsSplit <- VlnPlot(CisplatinObj, features  = j,split.by = "DataSet")
+    
+    ggsave(
+      paste0(
+        EGFSignalingTypeDir,
+        EGFSignalingType,
+        "_",
+        j,
+        "_VlnPlot_GeneMarkers_ReAnnoatation_SplitData.pdf"
+      ),
+      plot = VlnPlotsSplit,
+      height = 5,
+      width = 10
+    )
+  }
+  
+}
+
+
+
+DotPlot(
+  CisplatinObj,
+  features = c("Egf","Erbb4",  "Hbegf"),
+  group.by = "FinalAnnotation_HC",
+  #split.by = "DataSet"
+) +
+  RotatedAxis() +
+  #facet_wrap(~DataSet, scales = "free_x") +
+  #scale_color_gradient(low = "lightgrey", high = "red") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+
+
+#### the following code is still under development
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# read the mitochondrial ETC and encoding genes
+MitETCEncodingGenes<- read.csv("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Features/MitochondrialETCGenes.csv")
+
+# homologous between mouse and human
+HomologousGenes<- read.csv("/Users/XXW004/Documents/Projects/Databases/HumanMouseTransfer/HOM_MouseHuman_Symbol.csv")
+# HomologousGenes 
+HomologousGenes%>% head()
+# transfer into mouse genes
+MitETCEncodingGenes %>% head()
+MitETCEncodingGenesHumanMouse<-MitETCEncodingGenes %>% left_join(HomologousGenes,  by = c("MitoETCGenes" = "Symbol.y" ) )
+
+write.csv(MitETCEncodingGenesHumanMouse, file = "MitETCEncodingGenesHumanMouse.csv")
+
+# we have carefully matched the gene name and put the homologous genes
+MitETCEncodingGenesHumanMouse <- read.csv("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Features/MitETCEncodingGenesHumanMouse_Updated.csv")
+MitETCEncodingGenesHumanMouse$Symbol.x
+
+MitETCGenes<- MitETCEncodingGenesHumanMouse%>% dplyr::filter(grepl("Miochondrial ETC",Categories))
+
+MitEncodeGenes<- MitETCEncodingGenesHumanMouse%>% dplyr::filter(grepl("Mitochondrial Encode",Categories))
+
+```
+
+
+```{r}
+setwd("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Features/")
+# Get data
+requestPathway <- "EGFLigandReceptors"
+RequestGeneList<- c("Egf","Egfr","Erbb2","Erbb3","Erbb4")
+
+requestPathway <- "EGFKIM1"
+RequestGeneList<- c("Egf","Havcr1")
+requestPathway <- "MitochondrialETCGenes"
+RequestGeneList <- MitETCGenes$Symbol.x
+requestPathway <- "MitochondrialEncodeGenes"
+RequestGeneList <-MitEncodeGenes$Symbol.x
+
+expr <- FetchData(CisplatinObj, vars = c("FinalAnnotation","DataSet",RequestGeneList))
+
+# 
+# expr <- FetchData(CisplatinObj, vars = c("FinalAnnotation","DataSet","Egf","Egfr","Erbb2","Erbb3","Erbb4"))
+# 
+# 
+FinalExpGeneList <- colnames(expr)[3:length(colnames(expr))]
+length(FinalExpGeneList)
+# expr <- FetchData(CisplatinObj, vars = c("FinalAnnotation","DataSet","Egf","Erbb4","Hbegf","Pik3c2g","Akt1","Mtor","Rps6kb1"))
+# # Convert to long format
+expr_long <- expr %>%
+  tidyr::pivot_longer(cols = c(FinalExpGeneList),
+                      names_to = "gene",
+                      values_to = "expression")
+# expr_long <- expr %>%
+#   tidyr::pivot_longer(cols = c("Egf","Erbb4","Hbegf","Pik3c2g","Akt1","Mtor","Rps6kb1"),
+#                       names_to = "gene",
+#                       values_to = "expression")
+# 
+# 
+# expr_long <- expr %>%
+#   tidyr::pivot_longer(cols = c("Egf","Egfr","Erbb2","Erbb3","Erbb4"),
+#                       names_to = "gene",
+#                       values_to = "expression")
+
+expr_long$DataSet
+# Compute average per celltype and condition
+pct_expr <- expr_long %>%
+  group_by(FinalAnnotation, DataSet, gene) %>%
+  summarize(
+    avg = mean(expression, na.rm = TRUE),
+    pct = mean(expression > 0) * 100,
+    .groups = "drop"
+  )
+
+
+
+SelectedGeneConditionCompareDotPlot<-ggplot(pct_expr, aes(x = gene, y = FinalAnnotation, size = pct, color = avg)) +
+  geom_point() +
+  facet_wrap(~DataSet) +
+  #scale_color_gradient(low = "lightgrey", high = "darkred") +
+  scale_color_gradient(low = "grey90", high = "#B2182B")+
+  #scale_color_viridis_c(option = "magma")+
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave(paste0(requestPathway,"_Condition_DotPlot.pdf"), plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 6)
+# ggsave("Egf_Erbb4_Hbegf_Condition_DotPlot.pdf", plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 6)
+# ggsave("Egf_Erbb4_Hbegf_PI3K_AKT_mTOR_Condition_DotPlot.pdf", plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 8)
+# ggsave("Egf_Erbb1_4_Condition_DotPlot.pdf", plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 8)
+
+VlnPlot(CisplatinObj, features = RequestGeneList, split.by = "DataSet")
+
+# put the fold changes and p value for the visualization
+# calculate the p value and fold changes for each genes
+pct_expr_pvalue <- expr_long %>%
+  group_by(gene,FinalAnnotation) %>%
+  summarize(
+    p_value = tryCatch(wilcox.test(expression ~ DataSet)$p.value, error = function(e) NA_real_),
+    LogFoldChange = log2(mean(expression[DataSet == "Cisplatin"]) / mean(expression[DataSet == "Vehicle"])),
+    .groups = "drop"
+  )
+
+# Use the p-values and fold changes to draw the DotPlot with significance stars
+pct_expr_pvalue <- pct_expr_pvalue %>%
+  mutate(sig_label = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01  ~ "**",
+    p_value < 0.05  ~ "*"
+  ),
+  sig_size = case_when(
+    p_value < 0.001 ~ 4,
+    p_value < 0.01  ~ 3,
+    p_value < 0.05  ~ 2,
+    TRUE            ~ 1
+  ))
+
+SelectedGeneConditionCompareDotPlotPvalue<- ggplot(pct_expr_pvalue, aes(x = gene, y = FinalAnnotation, size = sig_size, color = LogFoldChange)) +
+  geom_point() +
+  geom_text(aes(label = sig_label), size = 3, vjust = 0.5, hjust = 0.5, color = "black") +
+  #scale_size_continuous(name = "Significance", breaks = c(1, 2, 3, 4), labels = c("*", "**", "***"), range = c(3, 10)) +
+  #facet_wrap(~DataSet) +
+  scale_color_gradient2(low = "lightblue", high = "#B2182B", mid = "white",midpoint = 0) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),     panel.grid.major = element_line(linewidth = 0.15),  # 主网格线变细
+    panel.grid.minor = element_line(linewidth = 0.15)) # 次网格线更细)  # 去掉次网格线)
+
+ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 5, width = 4)
+
+write.csv(x = pct_expr_pvalue, file = "MitETCEncodingGenes_pct_expr_pvalue.csv")
+
+
+```
+
+

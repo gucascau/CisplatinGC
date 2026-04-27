@@ -109,7 +109,7 @@ setwd(OutDir)
 
 ```{r}
 # the single cell RDS
-CisplatinObj <- readRDS(paste0(CisplatinObjDir, "Cisplatin_Vehicle_Raw_Predict_Annotation.RDS"))
+CisplatinObj <- readRDS(paste0(CisplatinObjDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS"))
 
 ```
 
