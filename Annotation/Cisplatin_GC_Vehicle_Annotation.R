@@ -133,6 +133,35 @@ cat("MKA sample gene names:", head(rownames(reference_mka), 5), "\n")
 MKA_Order<- c(c("PTS1", "PTS2", "PTS3", "PTS3T2","PEC","DCT","DCT-CNT","CNT","ATL","CTAL","MTAL","DTL-ATL","DTL","LOH","Podo","ICA","ICB","CD-Trans","PC","Per","MC", "Endo","Asc-Vasa-Recta","Desc-Vasa-Recta","Vas-Efferens","Vas-Afferens", "Glom-Endo", "Fib","Neutro","Macro","T lymph","B lymph","NK","DC"))
 DefaultAssay(scrna) <- "RNA"
 
+# generate the Dimplot for the MKA and the Markers
+DimPlotRefereMKA<- DimPlot(reference_mka, group.by = "author_cell_type", label = TRUE, repel = TRUE) + ggtitle("MKA reference author_cell_type")
+ggsave("Cisplatin_GC_Vehicle_MKA_Reference_DimPlot.pdf", plot = DimPlotRefereMKA, height = 5, width = 9)
+
+# generate the DotPlot for the MKA reference of marker genes
+Finalcelltypemarkers <- c(
+  "Lrp2","Slc34a1","Slc13a3",          # Proximal tubule (PT)
+  "Slc12a3","Pvalb","Wnk1",            # Distal convoluted tubule (DCT)
+  "Umod","Slc12a1","Cldn10",           # Thick ascending limb (TAL)
+  "Klk1","Slc8a1","Calb1",             # Connecting tubule (CNT)
+  "Slc14a2","Fst","Bst1",              # Thin descending limb (DTL/LOH)
+  "Aqp2","Hsd11b2","Scnn1g",           # Principal cells (PC)
+  "Atp6v1g3","Aqp6","Slc26a7",         # Intercalated cells (IC)
+  "Wt1","Nphs1","Nphs2",               # Podocyte (POD)
+  "Cdh5","Igfbp3","Pecam1",            # Endothelium (END)
+  "Col3a1","Fbn1","Lum","Col1a1",      # Fibroblast (FIB)
+  "Ireb2","Alas2",                     # Plasmacytoid dendritic cells
+  "S100a8","S100a9","Il1b",            # Neutrophil
+  "C1qa","C1qb","Aif1",               # Macrophage
+  "Cxcr6","Cd247","Cd3e",             # T cells
+  "Igkc","Cd79a","Cd79b",             # B cells
+  "Ccl5","Nkg7","Cd7"                 # NK/CD8 cells
+)
+DefaultAssay(reference_mka) <- "RNA"
+# marker genes shared between MKA and our dataset
+markers_mka <- intersect(Finalcelltypemarkers, rownames(reference_mka))
+DotPlotMarkerGenesMKD <- DotPlot(reference_mka, features = markers_mka) + RotatedAxis() + ggtitle("MKA reference marker genes")
+ggsave("Cisplatin_GC_Vehicle_MKA_Reference_MarkerGenes_DotPlot.pdf", plot = DotPlotMarkerGenesMKD, height = 5, width = 9)
+
 reference_mka <- NormalizeData(reference_mka)
 reference_mka <- FindVariableFeatures(reference_mka, selection.method = "vst", nfeatures = 4000)
 reference_mka <- ScaleData(reference_mka)
