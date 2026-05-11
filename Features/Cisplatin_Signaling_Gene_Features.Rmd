@@ -658,21 +658,21 @@ DotPlot(
 
 
 ```{r}
-# read the mitochondrial ETC and encoding genes
-MitETCEncodingGenes<- read.csv("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Features/MitochondrialETCGenes.csv")
+# # read the mitochondrial ETC and encoding genes
+# MitETCEncodingGenes<- read.csv("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Features/MitochondrialETCGenes.csv")
 
-# homologous between mouse and human
-HomologousGenes<- read.csv("/Users/XXW004/Documents/Projects/Databases/HumanMouseTransfer/HOM_MouseHuman_Symbol.csv")
-# HomologousGenes 
-HomologousGenes%>% head()
-# transfer into mouse genes
-MitETCEncodingGenes %>% head()
-MitETCEncodingGenesHumanMouse<-MitETCEncodingGenes %>% left_join(HomologousGenes,  by = c("MitoETCGenes" = "Symbol.y" ) )
+# # homologous between mouse and human
+# HomologousGenes<- read.csv("/Users/XXW004/Documents/Projects/Databases/HumanMouseTransfer/HOM_MouseHuman_Symbol.csv")
+# # HomologousGenes 
+# HomologousGenes%>% head()
+# # transfer into mouse genes
+# MitETCEncodingGenes %>% head()
+# MitETCEncodingGenesHumanMouse<-MitETCEncodingGenes %>% left_join(HomologousGenes,  by = c("MitoETCGenes" = "Symbol.y" ) )
 
-write.csv(MitETCEncodingGenesHumanMouse, file = "MitETCEncodingGenesHumanMouse.csv")
+# write.csv(MitETCEncodingGenesHumanMouse, file = "MitETCEncodingGenesHumanMouse.csv")
 
 # we have carefully matched the gene name and put the homologous genes
-MitETCEncodingGenesHumanMouse <- read.csv("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Features/MitETCEncodingGenesHumanMouse_Updated.csv")
+MitETCEncodingGenesHumanMouse <- read.csv("/vast0/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Features/MitETCEncodingGenesHumanMouse_Updated.csv")
 MitETCEncodingGenesHumanMouse$Symbol.x
 
 MitETCGenes<- MitETCEncodingGenesHumanMouse%>% dplyr::filter(grepl("Miochondrial ETC",Categories))
@@ -683,7 +683,7 @@ MitEncodeGenes<- MitETCEncodingGenesHumanMouse%>% dplyr::filter(grepl("Mitochond
 
 
 ```{r}
-setwd("/Users/XXW004/Documents/Projects/Diana_Zepedo_Orozco/scRNAseq_/Results/Features/")
+setwd("/vast0/home/gdzepedaorozcolab/lab/xxw004/Projects/RawDZscRNAseq/Results/Integration/IntegrationGC/Features/MitochondrialDysfunction/")
 # Get data
 requestPathway <- "EGFLigandReceptors"
 RequestGeneList<- c("Egf","Egfr","Erbb2","Erbb3","Erbb4")
@@ -695,7 +695,7 @@ RequestGeneList <- MitETCGenes$Symbol.x
 requestPathway <- "MitochondrialEncodeGenes"
 RequestGeneList <-MitEncodeGenes$Symbol.x
 
-expr <- FetchData(CisplatinObj, vars = c("FinalAnnotation","DataSet",RequestGeneList))
+expr <- FetchData(CisplatinObj, vars = c("FinalAnnotation_HC","DataSet",RequestGeneList))
 
 # 
 # expr <- FetchData(CisplatinObj, vars = c("FinalAnnotation","DataSet","Egf","Egfr","Erbb2","Erbb3","Erbb4"))
@@ -723,7 +723,7 @@ expr_long <- expr %>%
 expr_long$DataSet
 # Compute average per celltype and condition
 pct_expr <- expr_long %>%
-  group_by(FinalAnnotation, DataSet, gene) %>%
+  group_by(FinalAnnotation_HC, DataSet, gene) %>%
   summarize(
     avg = mean(expression, na.rm = TRUE),
     pct = mean(expression > 0) * 100,
@@ -732,7 +732,7 @@ pct_expr <- expr_long %>%
 
 
 
-SelectedGeneConditionCompareDotPlot<-ggplot(pct_expr, aes(x = gene, y = FinalAnnotation, size = pct, color = avg)) +
+SelectedGeneConditionCompareDotPlot<-ggplot(pct_expr, aes(x = gene, y = FinalAnnotation_HC, size = pct, color = avg)) +
   geom_point() +
   facet_wrap(~DataSet) +
   #scale_color_gradient(low = "lightgrey", high = "darkred") +
@@ -749,21 +749,35 @@ ggsave(paste0(requestPathway,"_Condition_DotPlot.pdf"), plot = SelectedGeneCondi
 VlnPlot(CisplatinObj, features = RequestGeneList, split.by = "DataSet")
 
 # put the fold changes and p value for the visualization
-# calculate the p value and fold changes for each genes
-pct_expr_pvalue <- expr_long %>%
-  group_by(gene,FinalAnnotation) %>%
-  summarize(
-    p_value = tryCatch(wilcox.test(expression ~ DataSet)$p.value, error = function(e) NA_real_),
-    LogFoldChange = log2(mean(expression[DataSet == "Cisplatin"]) / mean(expression[DataSet == "Vehicle"])),
-    .groups = "drop"
-  )
+# calculate pairwise stats vs Vehicle for each non-Vehicle condition
+conditions <- setdiff(unique(expr_long$DataSet), "Vehicle")
+
+pct_expr_pvalue <- lapply(conditions, function(cond) {
+  expr_long %>%
+    filter(DataSet %in% c(cond, "Vehicle")) %>%
+    group_by(gene, FinalAnnotation_HC) %>%
+    summarize(
+      p_value = tryCatch(
+        wilcox.test(expression ~ DataSet)$p.value,
+        error = function(e) NA_real_
+      ),
+      LogFoldChange = log2(
+        (mean(expression[DataSet == cond],      na.rm = TRUE) + 1e-9) /
+        (mean(expression[DataSet == "Vehicle"], na.rm = TRUE) + 1e-9)
+      ),
+      .groups = "drop"
+    ) %>%
+    mutate(Comparison = paste0(cond, "_vs_Vehicle"))
+}) %>%
+  bind_rows()
 
 # Use the p-values and fold changes to draw the DotPlot with significance stars
 pct_expr_pvalue <- pct_expr_pvalue %>%
   mutate(sig_label = case_when(
     p_value < 0.001 ~ "***",
     p_value < 0.01  ~ "**",
-    p_value < 0.05  ~ "*"
+    p_value < 0.05  ~ "*",
+    TRUE            ~ ""
   ),
   sig_size = case_when(
     p_value < 0.001 ~ 4,
@@ -772,19 +786,19 @@ pct_expr_pvalue <- pct_expr_pvalue %>%
     TRUE            ~ 1
   ))
 
-SelectedGeneConditionCompareDotPlotPvalue<- ggplot(pct_expr_pvalue, aes(x = gene, y = FinalAnnotation, size = sig_size, color = LogFoldChange)) +
+SelectedGeneConditionCompareDotPlotPvalue <- ggplot(pct_expr_pvalue, aes(x = gene, y = FinalAnnotation_HC, size = sig_size, color = LogFoldChange)) +
   geom_point() +
   geom_text(aes(label = sig_label), size = 3, vjust = 0.5, hjust = 0.5, color = "black") +
-  #scale_size_continuous(name = "Significance", breaks = c(1, 2, 3, 4), labels = c("*", "**", "***"), range = c(3, 10)) +
-  #facet_wrap(~DataSet) +
-  scale_color_gradient2(low = "lightblue", high = "#B2182B", mid = "white",midpoint = 0) +
+  facet_wrap(~Comparison) +
+  scale_color_gradient2(low = "lightblue", high = "#B2182B", mid = "white", midpoint = 0) +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),     panel.grid.major = element_line(linewidth = 0.15),  # 主网格线变细
-    panel.grid.minor = element_line(linewidth = 0.15)) # 次网格线更细)  # 去掉次网格线)
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major = element_line(linewidth = 0.15),
+        panel.grid.minor = element_line(linewidth = 0.15))
 
-ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 5, width = 4)
+ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 5, width = 4 * length(conditions))
 
-write.csv(x = pct_expr_pvalue, file = "MitETCEncodingGenes_pct_expr_pvalue.csv")
+write.csv(x = pct_expr_pvalue, file = paste0(requestPathway,"_Genes_pct_expr_pvalue.csv"))
 
 
 ```
