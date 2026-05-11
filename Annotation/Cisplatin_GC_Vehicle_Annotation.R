@@ -226,6 +226,10 @@ print(colnames(reference_lake@meta.data))
 
 lake_label_col <- "SubclassLevel1"
 
+# generate the Dimplot for the Lake and the Markers
+DimPlotRefereLake<- DimPlot(reference_lake, group.by = "author_cell_type", label = TRUE, repel = TRUE) + ggtitle("Lake reference author_cell_type")
+ggsave("Cisplatin_GC_Vehicle_Lake_Reference_DimPlot.pdf", plot = DimPlotRefereMKA, height = 5, width = 9)
+
 reference_lake@meta.data$SubclassLevel1 %>% table()
 reference_lake@meta.data$SubclassLevel1  %>% unique()
 anchors_lake <- FindTransferAnchors(

@@ -120,6 +120,8 @@ setwd(QCDir)
 # create an empty list to store the objects
 scrna.list = list()
 
+
+
 # Before I am doing any thing, I have change the name to matrix.mtx.gz, features.tsv.gz and barcodes.tsv.gz for the convenience of reading the data.
 
 for (i in Datafiles) {
@@ -309,6 +311,8 @@ table(doublet_id) # quantify total doublet vs. singlet calls (expect ~6% doublet
 scrna <- AddMetaData(scrna, doublet_id)
  
 saveRDS(scrna, file = "Cisplatin_GC_Vehicle_scrna_merged_withdoublets.rds")
+
+scrna <- readRDS("Cisplatin_GC_Vehicle_scrna_merged_withdoublets.rds")
 # remove the doublets
 scrna<-subset(scrna, subset= (doublet_id == "Singlet"))
 
@@ -367,8 +371,18 @@ ggsave(filename = "DimplotScrnaSplit.pdf", plot = DimplotScrnaSplit, width = 20,
 
 saveRDS(scrna, file = "Cisplatin_GC_Vehicle_singlecell_doublet_harmony_v04082026.RDS")
 
-#scrna<- readRDS("Cisplatin_GC_Vehicle_singlecell_doublet_harmony_v0618.RDS")
+#scrna<- readRDS("Cisplatin_GC_Vehicle_singlecell_doublet_harmony_v04082026.RDS")
 
+# Generate the DimPlots for there condtions
+scrna <- subset(scrna, subset = DataSet %in% c("Vehicle", "Cisplatin","Cisplatin-GC"))
+
+DimplotScrnaThree <- DimPlot(scrna, reduction = "umap", label = T) 
+DimplotScrnaThree
+DimplotScrnaSplitThree <- DimPlot(scrna, reduction = "umap",split.by = "DataSet", label = T) 
+DimplotScrnaSplit
+
+ggsave(filename = "DimplotScrnatThreeConditions.pdf", plot = DimplotScrnaThree, width = 5, height = 5)
+ggsave(filename = "DimplotScrnaSplitThreeConditions.pdf", plot = DimplotScrnaSplitThree, width = 15, height = 5)
 # increase the RNA resolution
 #scrna <- FindClusters(scrna,  resolution = 1.5,algorithm = 1)
 
