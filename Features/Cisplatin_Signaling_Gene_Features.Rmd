@@ -742,6 +742,8 @@ SelectedGeneConditionCompareDotPlot<-ggplot(pct_expr, aes(x = gene, y = FinalAnn
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ggsave(paste0(requestPathway,"_Condition_DotPlot.pdf"), plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 6)
+
+#ggsave(paste0(requestPathway,"_Condition_DotPlot.pdf"), plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 30)
 # ggsave("Egf_Erbb4_Hbegf_Condition_DotPlot.pdf", plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 6)
 # ggsave("Egf_Erbb4_Hbegf_PI3K_AKT_mTOR_Condition_DotPlot.pdf", plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 8)
 # ggsave("Egf_Erbb1_4_Condition_DotPlot.pdf", plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 8)
@@ -749,31 +751,39 @@ ggsave(paste0(requestPathway,"_Condition_DotPlot.pdf"), plot = SelectedGeneCondi
 VlnPlot(CisplatinObj, features = RequestGeneList, split.by = "DataSet")
 
 # put the fold changes and p value for the visualization
-# calculate pairwise stats vs Vehicle for each non-Vehicle condition
-conditions <- setdiff(unique(expr_long$DataSet), "Vehicle")
+# define all pairwise comparisons: c(condition, reference)
+comparison_pairs <- list(
+  c("Cisplatin",    "Vehicle"),
+  c("Cisplatin-GC", "Vehicle"),
+  c("Cisplatin-GC", "Cisplatin")
+)
 
-pct_expr_pvalue <- lapply(conditions, function(cond) {
+pct_expr_pvalue <- lapply(comparison_pairs, function(pair) {
+  cond <- pair[1]
+  ref  <- pair[2]
   expr_long %>%
-    filter(DataSet %in% c(cond, "Vehicle")) %>%
+    filter(DataSet %in% c(cond, ref)) %>%
     group_by(gene, FinalAnnotation_HC) %>%
     summarize(
       p_value = tryCatch(
         wilcox.test(expression ~ DataSet)$p.value,
         error = function(e) NA_real_
       ),
-      LogFoldChange = log2(
-        (mean(expression[DataSet == cond],      na.rm = TRUE) + 1e-9) /
-        (mean(expression[DataSet == "Vehicle"], na.rm = TRUE) + 1e-9)
-      ),
+      LogFoldChange = {
+        mc <- mean(expression[DataSet == cond], na.rm = TRUE)
+        mr <- mean(expression[DataSet == ref],  na.rm = TRUE)
+        ifelse(mr == 0, NA_real_, log2(mc / mr))
+      },
       .groups = "drop"
     ) %>%
-    mutate(Comparison = paste0(cond, "_vs_Vehicle"))
+    mutate(Comparison = paste0(cond, "_vs_", ref))
 }) %>%
   bind_rows()
 
 # Use the p-values and fold changes to draw the DotPlot with significance stars
 pct_expr_pvalue <- pct_expr_pvalue %>%
-  mutate(sig_label = case_when(
+  mutate(LogFoldChange = pmin(pmax(LogFoldChange, -10), 10),
+         sig_label = case_when(
     p_value < 0.001 ~ "***",
     p_value < 0.01  ~ "**",
     p_value < 0.05  ~ "*",
@@ -789,15 +799,17 @@ pct_expr_pvalue <- pct_expr_pvalue %>%
 SelectedGeneConditionCompareDotPlotPvalue <- ggplot(pct_expr_pvalue, aes(x = gene, y = FinalAnnotation_HC, size = sig_size, color = LogFoldChange)) +
   geom_point() +
   geom_text(aes(label = sig_label), size = 3, vjust = 0.5, hjust = 0.5, color = "black") +
-  facet_wrap(~Comparison) +
-  scale_color_gradient2(low = "lightblue", high = "#B2182B", mid = "white", midpoint = 0) +
+  facet_wrap(~Comparison, ncol = 1) +
+  scale_color_gradient2(low = "lightblue", high = "#B2182B", mid = "white", midpoint = 0, limits = c(-10, 10)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         panel.grid.major = element_line(linewidth = 0.15),
         panel.grid.minor = element_line(linewidth = 0.15))
 
-ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 5, width = 4 * length(conditions))
+ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 4 * length(comparison_pairs), width = 14)
 
+
+ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 4, width = 12 * length(conditions))
 write.csv(x = pct_expr_pvalue, file = paste0(requestPathway,"_Genes_pct_expr_pvalue.csv"))
 
 
