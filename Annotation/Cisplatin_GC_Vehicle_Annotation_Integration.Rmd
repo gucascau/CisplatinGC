@@ -139,6 +139,16 @@ CisplatinGCObj<- readRDS(
   file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_Annotation.RDS")
 )
 
+# Drop unused factor levels that survive RDS round-trips — DotPlot uses levels()
+# and empty levels produce a 0-row data frame that causes a $<- assignment error.
+for (col in c("Seaurat_Transfer_Predicted_MKA", "Seaurat_Transfer_Predicted_Lake",
+              "scanvi_MKA_label", "scanvi_Lake_label", "Raw_cell_type")) {
+  if (col %in% colnames(CisplatinGCObj@meta.data)) {
+    CisplatinGCObj@meta.data[[col]] <- as.character(CisplatinGCObj@meta.data[[col]])
+    CisplatinGCObj@meta.data[[col]][is.na(CisplatinGCObj@meta.data[[col]])] <- "Unknown"
+  }
+}
+
 CisplatinDimplotClusters<- DimPlot(CisplatinGCObj,  split.by = "DataSet", label = TRUE, ncol = 3) + scale_color_hue() +
   ggtitle("Reclustering of Vehicle + Cisplatin samples") +
   theme(legend.position = "right")
@@ -154,6 +164,7 @@ Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_DimPlot<- DimPlot(CisplatinGCOb
   theme(legend.position = "right")
 # save the file
 ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_DimPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_DimPlot, height = 5, width = 14)
+
 
 
 Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPMKA_DimPlot<- DimPlot(CisplatinGCObj, group.by = "Seaurat_Transfer_Predicted_MKA",split.by = "DataSet", label = TRUE) +  scale_color_hue()+
@@ -174,6 +185,8 @@ ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanviLake_DimPl
 Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_DimPlot<- DimPlot(CisplatinGCObj, group.by = "scanvi_MKA_label",split.by = "DataSet", label = TRUE, ncol = 3) +
   ggtitle("Reclustering of Vehicle + Cisplatin samples scanvi MKA") + scale_color_hue() +
   theme(legend.position = "right")
+
+  
 # save the file
 ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_DimPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_DimPlot, height = 5, width = 14)
 
@@ -243,6 +256,44 @@ for (ct in names(kidney_signatures)) {
     })
   }
 }
+
+# add the dotplots for the marker genes across different annotations
+all_markers_in_obj <- intersect(unique(unlist(kidney_signatures)), rownames(CisplatinGCObj))
+
+# Generate dotplots for each annotation method
+
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_MarkerDotPlot <- DotPlot(CisplatinGCObj, group.by = "Seaurat_Transfer_Predicted_Lake", features = all_markers_in_obj) + RotatedAxis()+
+  ggtitle("Reclustering of Vehicle + Cisplatin samples STP Lake Marker DotPlots") +
+  theme(legend.position = "right")
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_MarkerDotPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPLake_MarkerDotPlot, height = 5, width = 25)
+
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPMKA_MarkerDotPlot <-  DotPlot(CisplatinGCObj, group.by = "Seaurat_Transfer_Predicted_MKA",features = all_markers_in_obj ) +  RotatedAxis() + 
+  ggtitle("Reclustering of Vehicle + Cisplatin samples STP MKA Marker DotPlots") +
+  theme(legend.position = "right")
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPMKA_MarkerDotPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_STPMKA_MarkerDotPlot, height = 8, width = 25)
+
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanviLake_MarkerDotPlot <- DotPlot(CisplatinGCObj, group.by = "scanvi_Lake_label", features = all_markers_in_obj) + RotatedAxis() +
+  ggtitle("Reclustering of Vehicle + Cisplatin samples scanvi Lake Marker DotPlots") +
+  theme(legend.position = "right")
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanviLake_MarkerDotPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanviLake_MarkerDotPlot, height = 5, width = 25)
+
+
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_MarkerDotPlot<- DotPlot(CisplatinGCObj, group.by = "scanvi_MKA_label",features = all_markers_in_obj) + RotatedAxis() +
+  ggtitle("Reclustering of Vehicle + Cisplatin samples scanvi MKA Marker DotPlots")  +
+  theme(legend.position = "right")
+
+  
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_MarkerDotPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_scanvMKA_MarkerDotPlot, height = 8, width = 25)
+
+
 
 ```
 
@@ -320,12 +371,30 @@ Idents(CisplatinGCObj) <- "Raw_cell_type_rcl"
 
 DotPlot(CisplatinGCObj, features = all_markers_in_obj) + RotatedAxis()
 
+
 # saveRDS
 saveRDS(CisplatinGCObj,
         file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_NoVehGC_Annotation.RDS"))
 CisplatinGCObj <- readRDS(
   file = paste0(AnnDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_NoVehGC_Annotation.RDS")
 )
+
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_ManualAnnot_DimPlot<- DimPlot(CisplatinGCObj, group.by = "Raw_cell_type_rcl",split.by = "DataSet", label = TRUE, ncol = 3) +  scale_color_hue()+
+  ggtitle("Reclustering of Vehicle + Cisplatin samples STP Lake") +
+  theme(legend.position = "right")
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_ManualAnnot_DimPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_ManualAnnot_DimPlot, height = 5, width = 14)
+
+Cisplatin_GC_Vehicle_Reclustered_NoVehGC_MannualAnnot_MarkerDotPlot<- DotPlot(CisplatinGCObj, group.by = "Raw_cell_type_rcl",features = all_markers_in_obj) + RotatedAxis() +
+  ggtitle("Reclustering of Vehicle + Cisplatin samples mannual Annotation Marker DotPlots")  +
+  theme(legend.position = "right")
+
+  
+# save the file
+ggsave(paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_NoVehGC_MannualAnnot_MarkerDotPlot.pdf"), plot = Cisplatin_GC_Vehicle_Reclustered_NoVehGC_MannualAnnot_MarkerDotPlot, height = 8, width = 25)
+
+
 ```
 
 
