@@ -56,6 +56,7 @@ cat("WeightedAnnotation distribution:\n")
 print(table(CisplatinGCObj@meta.data$WeightedAnnotation, useNA = "always"))
 ```
 
+
 # Layer 2 — method agreement count
 
 How many of the five L1 methods agree with the weighted winner for each cell.
@@ -148,8 +149,8 @@ cluster_majority <- CisplatinGCObj@meta.data %>%
   summarise(n = n(), .groups = "drop") %>%
   group_by(Sub2) %>%
   slice_max(n, n = 1, with_ties = FALSE) %>%
-  rename(ClusterMajority_Weighted = WeightedAnnotation) %>%
-  select(Sub2, ClusterMajority_Weighted)
+  dplyr::rename(ClusterMajority_Weighted = WeightedAnnotation) %>%
+  dplyr::select(Sub2, ClusterMajority_Weighted)
 
 # Use match to preserve Seurat metadata rownames (left_join drops them)
 CisplatinGCObj@meta.data$ClusterMajority_Weighted <- cluster_majority$ClusterMajority_Weighted[
@@ -161,6 +162,15 @@ CisplatinGCObj@meta.data$FinalAnnotation_HC <- dplyr::case_when(
   TRUE                                                               ~ "Uncertain"
 )
 
+# we need to change the "Low" tier to the cluster majority label, but if the cluster majority is "Uncertain" (i.e., no clear dominant type), we should also mark those as "Uncertain" in the final annotation to avoid false confidence.
+
+# There are some problems with Mes and Fib labels, which are often confused and may have low confidence. To avoid misleading annotations, we can group them into a combined "FIB/VSM" category in the final annotation.
+CisplatinGCObj@meta.data$FinalAnnotation_HC <- dplyr::case_when(
+  CisplatinGCObj@meta.data$FinalAnnotation_HC %in% c("Mes","FIB") ~ "FIB/VSM",
+  TRUE ~ CisplatinGCObj@meta.data$FinalAnnotation_HC
+)
+
+#library(dplyr)
 cat("Final high-confidence annotation distribution:\n")
 print(table(CisplatinGCObj@meta.data$FinalAnnotation_HC, useNA = "always"))
 ```
@@ -177,7 +187,7 @@ hc_cluster_summary <- CisplatinGCObj@meta.data %>%
     pct_Low          = round(100 * mean(AnnotationTier == "Low"),    1),
     mean_score       = round(mean(WeightedAnnotation_score),    3),
     mean_n_agree     = round(mean(WeightedAnnotation_n_agree),  2),
-    ClusterCoherence = round(first(ClusterCoherence), 3),
+    ClusterCoherence = round(dplyr::first(ClusterCoherence), 3),
     .groups = "drop"
   ) %>%
   group_by(Sub2) %>%
@@ -217,7 +227,7 @@ p_hc <- DimPlot(CisplatinGCObj, group.by = "FinalAnnotation_HC",
         theme(legend.position = "right")
 ggsave(paste0(OutDir, "FinalAnnotation_HC_DimPlot.pdf"),
        plot = p_hc, height = 5, width = 14)
-p_hc
+
 ```
 
 ```{r barplot-tier}
@@ -259,18 +269,20 @@ celltype_order <- c(
   "POD",                          # Podocyte / PEC
   "PapE",                         # Papillary epithelium
   "END",                          # Endothelial (incl. vasa recta)
-  "FIB",                        # Fibroblast / stroma
-  "VSM/P",                        # Vascular smooth muscle / pericyte
+  "FIB/VSM",                        # Fibroblast / stroma
+  #"VSM/P",                        # Vascular smooth muscle / pericyte
   "Myeloid",                      # Macrophage / monocyte
   "Lymphoid"                    # T / B / NK
  
 )
 
+
+
 # Markers derived from your annotation integration script
 marker_list <- c(
   "Lrp2", "Slc34a1", "Slc13a3", "Slc5a2", "Slc22a6",# PT
   # DTL
-  "Aqp1", "Slc14a1",
+  "Aqp1", "Slc14a2",
   # TAL
   "Umod", "Slc12a1", "Cldn10", "Kcnj1", "Ptger3",
   # DCT
@@ -352,6 +364,9 @@ p_agree
 saveRDS(CisplatinGCObj,
         file = paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Weighted_FinalAnnotation.RDS"))
 
+# CisplatinGCObj <- readRDS(
+#   file = paste0(OutDir, "Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Weighted_FinalAnnotation.RDS")
+# )
 write.csv(
   CisplatinGCObj@meta.data[, c(
     "WeightedAnnotation", "WeightedAnnotation_score", "WeightedAnnotation_margin",

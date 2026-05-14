@@ -43,7 +43,7 @@ marker_list <- c(
   # PT
   "Lrp2", "Slc34a1", "Slc13a3", "Slc5a2", "Slc22a6",
   # DTL
-  "Aqp1", "Slc14a1",
+  "Aqp1", "Slc14a2",
   # TAL
   "Umod", "Slc12a1", "Cldn10", "Kcnj1", "Ptger3",
   # DCT
@@ -58,14 +58,17 @@ marker_list <- c(
   "Nphs1", "Nphs2", "Wt1", "Synpo",
   # END
   "Pecam1", "Cdh5", "Kdr",
+  
   # FIB
-  "Col1a1", "Dcn", "Pdgfra",
+  "Col1a1",  "Pdgfra", "Col1a2", "Col3a1", "Dcn",
   # VSM/P
   "Acta2", "Tagln", "Rgs5", "Pdgfrb",
   # Myeloid
   "C1qa", "C1qb", "Aif1", "Cd68",
   # Lymphoid
-  "Ptprc", "Cd3e", "Cd79a", "Nkg7"
+  "Ptprc", "Cd3e", "Cd79a", "Nkg7",
+  # Proliferation
+  "Mki67", "Top2a", "Birc5", "Cenpf", "Ube2c"
 )
 
 available_markers <- intersect(marker_list, rownames(obj))
