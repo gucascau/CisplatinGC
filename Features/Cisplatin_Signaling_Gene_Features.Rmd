@@ -536,7 +536,8 @@ EGFSignaling[["mTORC1_p70S6K"]] <- c("Mtor",    # MTOR
                                      "Rps6kb1", # RPS6KB1
                                      "Rps6",   # RPS6
                                      "Eif4ebp1"# EIF4EBP1
-                                     )
+           
+EGFSignaling[["EGFInjury"]] <- c("Egf","Havcr1" )
 
 EGFSignaling[["EGFReceptors"]] <- c("Egf","Egfr","Erbb2","Erbb3","Erbb4" )
 # Egfr, Vegf, Cdh5
@@ -621,8 +622,26 @@ for (i in 1:length(EGFSignaling)) {
   
 }
 
+expr <- FetchData(
+  CisplatinObj,
+  vars = c("Havcr1", "DataSet")
+)
 
+expr$Havcr1[is.na(expr$Havcr1)] <- 0
+CisplatinObj$Havcr1_plot <- expr$Havcr1
 
+KIMInjuryFeaturePlot <- FeaturePlot(
+  CisplatinObj,
+  features = "Havcr1_plot",
+  split.by = "DataSet",
+   order =TRUE, 
+) + RotatedAxis()
+
+ggsave("KIMInjuryFeaturePlot.pdf", plot = KIMInjuryFeaturePlot, height = 5, width = 12)
+# add the violin plot
+    VlnPlotsSplit <- VlnPlot(CisplatinObj, features  = "Havcr1_plot",split.by = "DataSet")
+ggsave("KIMInjuryVlnPlot.pdf", plot = VlnPlotsSplit, height = 5, width = 16)
+# FeaturePlot(CisplatinObj, features =  "Havcr1", order =TRUE, split.by = "DataSet") + RotatedAxis()
 DotPlot(
   CisplatinObj,
   features = c("Egf","Erbb4",  "Hbegf"),
@@ -749,7 +768,7 @@ ggsave(paste0(requestPathway,"_Condition_DotPlot.pdf"), plot = SelectedGeneCondi
 # ggsave("Egf_Erbb4_Hbegf_PI3K_AKT_mTOR_Condition_DotPlot.pdf", plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 8)
 # ggsave("Egf_Erbb1_4_Condition_DotPlot.pdf", plot = SelectedGeneConditionCompareDotPlot, height = 6, width = 8)
 
-VlnPlot(CisplatinObj, features = RequestGeneList, split.by = "DataSet")
+#VlnPlot(CisplatinObj, features = RequestGeneList, split.by = "DataSet")
 
 # put the fold changes and p value for the visualization
 # define all pairwise comparisons: c(condition, reference)
@@ -810,8 +829,25 @@ SelectedGeneConditionCompareDotPlotPvalue <- ggplot(pct_expr_pvalue, aes(x = gen
 ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 4 * length(comparison_pairs), width = 14)
 
 
-ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 4, width = 12 * length(conditions))
+### here is for put into one line
+
+SelectedGeneConditionCompareDotPlotPvalue <- ggplot(pct_expr_pvalue, aes(x = gene, y = FinalAnnotation_HC, size = sig_size, color = LogFoldChange)) +
+  geom_point() +
+  geom_text(aes(label = sig_label), size = 3, vjust = 0.5, hjust = 0.5, color = "black") +
+  facet_wrap(~Comparison, ncol = 3) +
+  scale_color_gradient2(low = "lightblue", high = "#B2182B", mid = "white", midpoint = 0, limits = c(-10, 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major = element_line(linewidth = 0.15),
+        panel.grid.minor = element_line(linewidth = 0.15))
+
+ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 5, width = 10)
+
+#ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 14, width = 4)
+
+# ggsave(paste0(requestPathway,"_Condition_DotPlot_PvalueFC.pdf"), plot = SelectedGeneConditionCompareDotPlotPvalue, height = 4, width = 12 * length(conditions))
 write.csv(x = pct_expr_pvalue, file = paste0(requestPathway,"_Genes_pct_expr_pvalue.csv"))
+
 
 
 ```

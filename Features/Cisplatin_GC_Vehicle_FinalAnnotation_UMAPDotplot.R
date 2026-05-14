@@ -238,3 +238,89 @@ for (col in all_annotation_cols) {
 
 cat("DotPlots saved to:", file.path(OutDir, "DotPlots"), "\n")
 cat("\nAll done.\n")
+
+
+# generate a barplot of cell type proportions per dataset for the FinalAnnotation_HC column
+cat("\n=== Generating Cell Type Proportion BarPlot ===\n")
+library(ggplot2)
+# Prepare data for plotting
+CisplatinObj$DataSet
+# Create a summary table of cell type proportions per dataset
+CellPopulations<- table(Idents(CisplatinObj),CisplatinObj$DataSet)
+# we ignore the Vehicle-GC dataset since it was not included in the final annotation
+CellPopulations <- CellPopulations[, -which(colnames(CellPopulations) == "Vehicle-GC")]
+
+CellPopulations<- as.data.frame(CellPopulations)
+colnames(CellPopulations) <- c("CellType", "DataSet", "Count")
+# Calculate proportions
+CellPopulations <- CellPopulations %>%
+  group_by(DataSet) %>%
+  mutate(Proportion = Count / sum(Count))
+# Generate the bar plot with fill based on CellType
+
+p_bar <- ggplot(CellPopulations, aes(x = DataSet, y = Proportion, fill = CellType)) +
+  geom_bar(stat = "identity", position = "fill") +
+  theme_minimal(base_size = 12) +
+  labs(title = "Cell Type Proportions per Dataset", x = "Dataset", y = "Proportion") +
+  theme(legend.position = "right",
+        plot.title = element_text(face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+# Save the bar plot
+ggsave(
+  filename = file.path(OutDir, "CellTypeProportions_BarPlot.pdf"),
+  plot     = p_bar,
+  width    = 6, height = 6
+)
+
+# I also want to get the accumulate number of bars per dataset, so I can use it to set the width of the bar plot
+
+ 
+# Generate the bar plot with fill based on CellType but for the counts instead of proportions
+p_bar_number <- ggplot(CellPopulations, aes(x = DataSet, y = Count, fill = CellType)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_minimal(base_size = 12) +
+  labs(title = "Cell Type Counts per Dataset", x = "Dataset", y = "Count") +
+  theme(legend.position = "right",
+        plot.title = element_text(face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Save the bar plot
+ggsave(
+  filename = file.path(OutDir, "CellTypeNumber_BarPlot.pdf"),
+  plot     = p_bar_number,
+  width    = 6, height = 8
+)
+
+
+# Generate the bar plot with fill based on CellType but for the counts instead of proportions, not use stacked but dodge, so we can see the counts of each cell type per dataset side by side
+p_bar_number_dodge <- ggplot(CellPopulations, aes(x = DataSet, y = Count, fill = CellType)) +
+  geom_bar(
+    stat = "identity",
+    position = position_dodge(width = 0.8)
+  ) +
+  geom_text(
+    aes(label = Count),
+    position = position_dodge(width = 0.8),
+    vjust = -0.3,
+    size = 3
+  ) +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Cell Type Counts per Dataset",
+    x = "Dataset",
+    y = "Count"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+p_bar_number_dodge
+# Save the bar plot
+ggsave(
+  filename = file.path(OutDir, "CellTypeNumber_BarPlot_dodge.pdf"),
+  plot     = p_bar_number_dodge,
+  width    = 18, height = 8
+)

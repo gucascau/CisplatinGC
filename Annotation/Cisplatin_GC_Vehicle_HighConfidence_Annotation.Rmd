@@ -57,6 +57,57 @@ print(table(CisplatinGCObj@meta.data$WeightedAnnotation, useNA = "always"))
 ```
 
 
+
+```{r}
+
+cat("\n=== Generating Cell Type Proportion BarPlot ===\n")
+library(ggplot2)
+# Prepare data for plotting
+CisplatinGCObj$DataSet
+# Create a summary table of cell type proportions per dataset
+CellPopulations<- table(CisplatinGCObj$WeightedAnnotation,CisplatinGCObj$DataSet)
+# we ignore the Vehicle-GC dataset since it was not included in the final annotation
+CellPopulations <- CellPopulations[, -which(colnames(CellPopulations) == "Vehicle-GC")]
+
+CellPopulations<- as.data.frame(CellPopulations)
+colnames(CellPopulations) <- c("CellType", "DataSet", "Count")
+# Calculate proportions
+# CellPopulations <- CellPopulations %>%
+#   group_by(DataSet) %>%
+#   mutate(Proportion = Count / sum(Count))
+p_bar_number_dodge <- ggplot(CellPopulations, aes(x = CellType, y = Count, fill = DataSet)) +
+  geom_bar(
+    stat = "identity",
+    position = position_dodge(width = 0.8)
+  ) +
+  geom_text(
+    aes(label = Count),
+    position = position_dodge(width = 0.8),
+    vjust = -0.3,
+    size = 3
+  ) +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Cell Type Counts per Dataset",
+    x = "Dataset",
+    y = "Count"
+  ) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+p_bar_number_dodge
+# Save the bar plot
+ggsave(
+  filename = file.path(OutDir, "CellTypeNumber_BarPlot_dodge_Original.pdf"),
+  plot     = p_bar_number_dodge,
+  width    = 18, height = 8
+)
+
+```
+
 # Layer 2 — method agreement count
 
 How many of the five L1 methods agree with the weighted winner for each cell.
@@ -275,7 +326,6 @@ celltype_order <- c(
   "Lymphoid"                    # T / B / NK
  
 )
-
 
 
 # Markers derived from your annotation integration script
