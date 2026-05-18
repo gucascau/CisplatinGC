@@ -1,0 +1,113 @@
+Loading our final annotated Seurat object ...
+Validating object structure
+Updating object slots
+Ensuring keys are in the proper structure
+Updating matrix keys for DimReduc ‘pca’
+Updating matrix keys for DimReduc ‘harmony’
+Updating matrix keys for DimReduc ‘umap’
+Ensuring keys are in the proper structure
+Ensuring feature names don't have underscores or pipes
+Updating slots in RNA
+Updating slots in RNA_nn
+Setting default assay of RNA_nn to RNA
+Updating slots in RNA_snn
+Setting default assay of RNA_snn to RNA
+Updating slots in pca
+Updating slots in harmony
+Updating slots in umap
+Setting umap DimReduc to global
+Setting assay used for Seurat..ProjectDim.RNA.harmony to RNA
+Setting assay used for NormalizeData.RNA to RNA
+Setting assay used for FindVariableFeatures.RNA to RNA
+Setting assay used for ScaleData.RNA to RNA
+Setting assay used for RunPCA.RNA to RNA
+Setting assay used for FindNeighbors.RNA.harmony to RNA
+No assay information could be found for FindClusters
+Setting assay used for RunUMAP.RNA.harmony to RNA
+Validating object structure for Assay5 ‘RNA’
+Validating object structure for Graph ‘RNA_nn’
+Validating object structure for Graph ‘RNA_snn’
+Validating object structure for DimReduc ‘pca’
+Validating object structure for DimReduc ‘harmony’
+Validating object structure for DimReduc ‘umap’
+Object representation is consistent with the most current Seurat version
+Warning message:
+Adding a command log without an assay associated with it 
+Our cell types (FinalAnnotation_HC):
+
+       PT       DTL       TAL       DCT       CNT        PC        IC       POD 
+    23881       113      1135       391       136      1110       183         6 
+      END   FIB/VSM   Myeloid  Lymphoid Uncertain 
+      873        18       308        52         0 
+Computing average expression for our dataset ...
+As of Seurat v5, we recommend using AggregateExpression to perform pseudo-bulk analysis.
+This message is displayed once per session.
+  Matrix: 16133 genes x 12 cell types
+Loading MKA reference ...
+Validating object structure
+Updating object slots
+Ensuring keys are in the proper structure
+Updating matrix keys for DimReduc ‘X_scANVI’
+Updating matrix keys for DimReduc ‘X_scVI’
+Updating matrix keys for DimReduc ‘X_umap’
+Ensuring keys are in the proper structure
+Ensuring feature names don't have underscores or pipes
+Updating slots in originalexp
+Updating slots in X_scANVI
+Updating slots in X_scVI
+Updating slots in X_umap
+Setting X_umap DimReduc to global
+Validating object structure for Assay ‘originalexp’
+Validating object structure for DimReduc ‘X_scANVI’
+Validating object structure for DimReduc ‘X_scVI’
+Validating object structure for DimReduc ‘X_umap’
+Object representation is consistent with the most current Seurat version
+Converting Ensembl IDs -> gene symbols ...
+'select()' returned 1:many mapping between keys and columns
+  Renamed 16641 genes.
+MKA cell types (author_cell_type):
+
+            ATL  Asc-Vasa-Recta         B lymph        CD-Trans             CNT 
+           1610             447             175              59            3903 
+           CTAL              DC             DCT         DCT-CNT             DTL 
+           3600              90           16381             810             372 
+        DTL-ATL Desc-Vasa-Recta            Endo             Fib       Glom-Endo 
+           1932             167           11702            1070            3547 
+            ICA             ICB             LOH              MC              MD 
+           1488            2447            1552             316              46 
+           MTAL           Macro              NK          Neutro              PC 
+           3840            1294             201              68            4975 
+            PEC            PTS1            PTS2            PTS3          PTS3T2 
+            117           18024           32717           17613            4478 
+            Per            Podo         T lymph         Unknown    Vas-Afferens 
+            154             558            1721            3649              36 
+   Vas-Efferens 
+            242 
+Computing average expression for MKA ...
+  Matrix: 16641 genes x 36 cell types
+Loading Lake snRNA reference ...
+Validating object structure
+Updating object slots
+Ensuring keys are in the proper structure
+Updating matrix keys for DimReduc ‘X_umap’
+Ensuring keys are in the proper structure
+Ensuring feature names don't have underscores or pipes
+Updating slots in originalexp
+Updating slots in X_umap
+Setting X_umap DimReduc to global
+Validating object structure for Assay ‘originalexp’
+Validating object structure for DimReduc ‘X_umap’
+Object representation is consistent with the most current Seurat version
+Converting Ensembl IDs -> gene symbols ...
+'select()' returned 1:many mapping between keys and columns
+  Renamed 28564 genes.
+Error: "author_cell_type" %in% colnames(ref_lake@meta.data) is not TRUE
+Execution halted
+Job Statistics for 7982051:
+           JobID       User               Start                 End    Elapsed   TotalCPU      State        NodeList 
+---------------- ---------- ------------------- ------------------- ---------- ---------- ---------- --------------- 
+         7982051     xxw004 2026-05-18T11:12:12 2026-05-18T11:14:21   00:02:09  02:04.577     FAILED   r1pl-hpcf-h04 
+   7982051.batch            2026-05-18T11:12:12 2026-05-18T11:14:21   00:02:09  02:04.576     FAILED   r1pl-hpcf-h04 
+  7982051.extern            2026-05-18T11:12:12 2026-05-18T11:14:21   00:02:09  00:00.001  COMPLETED   r1pl-hpcf-h04 
+Requested Resources: billing=24,cpu=24,mem=1016040M,node=1
+Maximum CPU Memory: 39050.96M; 	CPU Efficiency: 4.04% of 00:51:36 core-walltime
