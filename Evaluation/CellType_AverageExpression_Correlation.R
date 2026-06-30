@@ -166,15 +166,23 @@ ref_lake <- readRDS(paste0(RefDir, "LakesnRNA_seurat.rds"))
 ref_lake  <- UpdateSeuratObject(ref_lake)
 ref_lake  <- ensembl_to_symbol_seurat(ref_lake)
 
-stopifnot("author_cell_type" %in% colnames(ref_lake@meta.data))
-message("Lake cell types (author_cell_type):")
-print(table(ref_lake$author_cell_type))
+lake_label_col <- if ("author_cell_type" %in% colnames(ref_lake@meta.data)) {
+  "author_cell_type"
+} else if ("SubclassLevel1" %in% colnames(ref_lake@meta.data)) {
+  "SubclassLevel1"
+} else {
+  stop("Neither 'author_cell_type' nor 'SubclassLevel1' found in Lake metadata. Columns: ",
+       paste(colnames(ref_lake@meta.data), collapse = ", "))
+}
+message("Using Lake label column: ", lake_label_col)
+message("Lake cell types (", lake_label_col, "):")
+print(table(ref_lake@meta.data[[lake_label_col]]))
 
 DefaultAssay(ref_lake) <- "RNA"
 ref_lake <- NormalizeData(ref_lake, verbose = FALSE)
 
 message("Computing average expression for Lake ...")
-avg_lake <- compute_avg_expr(ref_lake, "author_cell_type")
+avg_lake <- compute_avg_expr(ref_lake, lake_label_col)
 message(sprintf("  Matrix: %d genes x %d cell types", nrow(avg_lake), ncol(avg_lake)))
 
 # =============================================================================
