@@ -121,6 +121,8 @@ scrna_full <- readRDS(
 cat("FinalAnnotation_HC distribution:\n")
 print(table(scrna_full@meta.data$FinalAnnotation_HC, useNA = "always"))
 
+DimPlot(scrna_full)
+
 # Enforce dataset order
 scrna_full@meta.data$DataSet <- ordered(
   factor(scrna_full@meta.data$DataSet),
