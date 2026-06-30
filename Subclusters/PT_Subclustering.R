@@ -121,7 +121,7 @@ scrna_full <- readRDS(
 cat("FinalAnnotation_HC distribution:\n")
 print(table(scrna_full@meta.data$FinalAnnotation_HC, useNA = "always"))
 
-DimPlot(scrna_full)
+# DimPlot(scrna_full)
 
 # Enforce dataset order
 scrna_full@meta.data$DataSet <- ordered(
@@ -148,23 +148,25 @@ pt <- JoinLayers(pt)
 pt <- NormalizeData(pt)
 pt <- FindVariableFeatures(pt, selection.method = "vst", nfeatures = 3000)
 pt <- ScaleData(pt)
-pt <- RunPCA(pt, verbose = TRUE, npcs = 30)
+pt <- RunPCA(pt, verbose = TRUE, npcs = 8)
 
 # Elbow plot to assess PC dimensionality
 ggsave(
   filename = "PT_ElbowPlot.pdf",
-  plot     = ElbowPlot(pt, ndims = 30),
+  plot     = ElbowPlot(pt, ndims = 10),
   height   = 4, width   = 5
 )
 
 # Harmony batch correction by DataSet
 pt <- RunHarmony(pt, group.by.vars = "DataSet", reduction.save = "harmony")
-pt <- RunUMAP(pt,      dims = 1:20, reduction = "harmony")
-pt <- FindNeighbors(pt, dims = 1:20, reduction = "harmony")
+pt <- RunUMAP(pt,      dims = 1:8, reduction = "harmony")
+pt <- FindNeighbors(pt, dims = 1:8, reduction = "harmony")
 pt <- FindClusters(pt, resolution = 0.4, algorithm = 1)
 
 cat("PT clusters at resolution 0.4:\n")
 print(table(pt@meta.data$seurat_clusters))
+
+
 
 # Initial UMAP
 ggsave(
@@ -267,14 +269,16 @@ cat("\n=== Generating PT subtype marker plots ===\n")
 
 # Canonical PT subtype markers
 PT_markers <- list(
-  PT_S1    = c("Slc5a2", "Slc34a1", "Lrp2", "Cubn", "Slc27a2", "Slc17a3"),
-  PT_S2    = c("Slc34a1", "Lrp2", "Slc22a30", "Slc16a9"),
-  PT_S3    = c("Slc22a6", "Slc22a8", "Slc22a30", "Slc16a9"),
+  PT_S1    = c("Slc5a2", "Slc5a12", "Slc34a1", "Lrp2", "Cubn", "Slc27a2", "Slc17a3"),
+  PT_S2    = c("Slc22a6","Slc34a1",  "Lrp2", "Slc22a30", "Slc16a9"),
+  PT_S3    = c("Slc22a30", "Atp11a","Inmt", "Slc22a8",  "Slc16a9"),
   aPT      = c("Havcr1", "Vcam1", "Vim", "Cdh6", "Ly6c1"),
   dPT      = c("Sox4", "Tgfb1", "Cldn1", "Fn1", "Hspa1a"),
   cycPT    = c("Mki67", "Top2a", "Pcna", "Cdk1", "Cenpa"),
+  Injury = c("Vcam1","Havcr1","Krt20","Nupr1"),
+  Proinflam = c("Il1b", "Cxcl2", "Ccl3", "Tyrobp",  "C3"),
   General  = c("Lrp2", "Slc34a1", "Slc13a3", "Slc5a2",
-               "Slc22a6", "Slc22a8", "Havcr1")
+               "Slc22a6", "Slc22a8", "Havcr1","Egf")
 )
 
 # Combined feature vector for DotPlot (deduplicated, ordered)
@@ -285,7 +289,9 @@ all_PT_features <- unique(c(
   PT_markers$PT_S3,
   PT_markers$aPT,
   PT_markers$dPT,
-  PT_markers$cycPT
+  PT_markers$cycPT,
+  PT_markers$Injury,
+  PT_markers$Proinflam
 ))
 all_PT_features <- intersect(all_PT_features, rownames(pt))
 
@@ -447,3 +453,9 @@ writeH5AD(
 )
 cat("h5ad written to:", paste0(OutDir, "PT_Subclustered_Annotated.h5ad"), "\n")
 cat("Next step: run PT_scvi_annotation.ipynb for scANVI-based subtype annotation\n")
+
+
+
+
+
+
