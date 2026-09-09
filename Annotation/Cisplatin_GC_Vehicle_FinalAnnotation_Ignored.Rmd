@@ -17,8 +17,8 @@ description: |
     "Discordant" — candidates for manual inspection or downstream exclusion.
 
   Confidence tiers:
-    High   : cluster vote fraction ≥ 70%  AND  per-cell agrees with cluster
-    Medium : cluster vote fraction ≥ 50%  OR   per-cell agrees with cluster
+    High   : cluster vote fraction ≥ 70%  AND  per-cell agrees with clusters
+    Medium : cluster vote fraction ≥ 50%  OR   per-cell agrees with clusters
     Low    : cluster vote fraction <  50%  AND  per-cell disagrees
 
   Input : Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Annotation.RDS
