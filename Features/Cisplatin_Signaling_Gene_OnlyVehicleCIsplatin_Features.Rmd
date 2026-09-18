@@ -162,6 +162,18 @@ DimPlot(CisplatinObj, reduction = "umap", split.by = "DataSet", group.by="FinalA
 Idents(CisplatinObj) <- CisplatinObj$FinalAnnotation_HC
 ```
 
+# we only select the Vehicle and Cisplatin samples for the following analysis
+```{r}
+CisplatinObj <- subset(CisplatinObj, subset = DataSet %in% c("Vehicle", "Cisplatin"))
+
+saveRDS(CisplatinObj, file = paste0(SingleCellObjDir,"Cisplatin_GC_Vehicle_Reclustered_MarkerAnnot_L1Harmonised_NoVehGC_Weighted_FinalAnnotation_VehicleCisplatin.RDS"))
+
+DimPlot(CisplatinObj, reduction = "umap", split.by = "DataSet", group.by="FinalAnnotation_HC") + RotatedAxis() 
+
+# Marker genes
+
+```
+
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 
 # we checked the cell cycle score of the datsets
